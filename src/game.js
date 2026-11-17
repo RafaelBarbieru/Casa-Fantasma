@@ -10,10 +10,11 @@ const TEXT = {
   locked: ["It's locked.", 'The door is locked.', "It won't open."],
   lockedHint: ['Locked. You have a key, but not for this door.'],
   unlock: ['The key turns. The door opens.'],
+  unlockMaster: ['The key turns. There is no way back.'],
   keyFound: ['There is a key behind the painting.', 'A key was hidden behind the painting.'],
   nothing: ['Nothing behind it.', 'Only dust behind the frame.', 'Nothing.'],
   searched: ['You already looked behind this one.'],
-  escaped: 'You escaped',
+  level: (n) => `Level ${n}`,
 };
 
 export const floorLineY = () => CONFIG.sceneH * CONFIG.room.floorLine;
@@ -42,8 +43,8 @@ export class Game {
     this.room = null;  // { spec, template, bg, items: [...] }
     this.msg = null;   // { text, t }
     this.onRoomChange = null; // (game) => void
-    this.onWorldEnd = null;   // (game) => void   called after the escape card
-    this.onSfx = null;        // (role) => void   role = key of CONFIG.sfx
+    this.onWorldEnd = null;   // (game) => void   called after the "Level N" card: start the next level
+    this.onSfx = null;        // (role, delay?) => void   role = key of CONFIG.sfx
     this.lastPointer = null;
   }
 
@@ -87,6 +88,7 @@ export class Game {
       floor: this.assets.surfaces.get(spec.floor), floorTile: sf.floors[spec.floor]?.tile ?? 512,
     };
     this.room = { spec, template, bg, items };
+    this.markExplored();
     this.hover = null;
     this.phase = 'in';
     this.phaseT = 0;
@@ -94,12 +96,33 @@ export class Game {
     this.onRoomChange?.(this);
   }
 
+  // True when nothing is left to find in room r and everything behind it: every painting searched, and every
+  // door opened and leading to an explored room. A locked door not yet opened, or the master door, counts as
+  // something left. The rooms form a tree, so this terminates; levels are small, so no caching is needed.
+  isExplored(r) {
+    return this.world.rooms[r].items.every((e, idx) => {
+      const uid = `${r}:${idx}`;
+      if (e.to === undefined) return this.searched.has(uid);
+      if (e.to === EXIT || (e.lock !== undefined && !this.unlocked.has(uid))) return false;
+      return this.isExplored(e.to);
+    });
+  }
+
+  // Item.explored drives the dull glow. Only taps in this room can change it, so it is refreshed on entry and
+  // after a painting is searched.
+  markExplored() {
+    for (const it of this.room.items) {
+      const e = it.e;
+      it.explored = e.to === undefined ? this.searched.has(it.uid)
+        : e.to !== EXIT && (e.lock === undefined || this.unlocked.has(it.uid)) && this.isExplored(e.to);
+    }
+  }
+
   say(text) {
     this.msg = { text, t: 0 };
   }
 
-  go(target, sfx) {
-    this.onSfx?.(sfx);
+  go(target) {
     this.next = target;
     this.phase = 'out';
     this.phaseT = 0;
@@ -129,39 +152,43 @@ export class Game {
     if (this.phase !== 'idle') return;
     const h = this.hit(p, kind);
     if (!h) return;
-    if (h === 'back') return void this.go(this.room.spec.parent, 'back');
+    if (h === 'back') {
+      this.onSfx?.('door');
+      return void this.go(this.room.spec.parent);
+    }
     const e = h.e;
     if (e.to !== undefined) {
       // Door
       if (e.lock !== undefined && !this.unlocked.has(h.uid)) {
         if (!this.keys.includes(e.lock)) {
           h.shake = 1;
-          this.onSfx?.('doorLocked');
+          this.onSfx?.('locked');
           this.say(pickText(this.keys.length ? TEXT.lockedHint : TEXT.locked));
           return;
         }
         this.keys = this.keys.filter((k) => k !== e.lock);
         this.unlocked.add(h.uid);
-        this.say(pickText(TEXT.unlock));
-        this.onSfx?.('doorUnlock');
+        // The master door ends the level: no way back, the next level is a new world.
+        this.say(pickText(e.to === EXIT ? TEXT.unlockMaster : TEXT.unlock));
       }
-      this.go(e.to, 'doorOpen');
+      this.onSfx?.(e.to === EXIT ? 'levelEnd' : 'door');
+      this.go(e.to);
       return;
     }
     // Painting
+    this.onSfx?.('painting');
     if (this.searched.has(h.uid)) {
       this.say(pickText(e.key !== undefined ? TEXT.searched : TEXT.nothing));
-      this.onSfx?.('itemClick');
       return;
     }
     this.searched.add(h.uid);
+    this.markExplored();
     if (e.key !== undefined) {
       this.keys.push(e.key);
       this.say(pickText(TEXT.keyFound));
-      this.onSfx?.('keyFound');
+      this.onSfx?.('item', CONFIG.itemSfxDelayS);
     } else {
       this.say(pickText(TEXT.nothing));
-      this.onSfx?.('itemClick');
     }
   }
 
@@ -258,10 +285,10 @@ export class Game {
     return {
       message: m?.text ?? null,
       chars: m ? Math.min(m.text.length, Math.floor(m.t * CONFIG.hud.textCps)) : 0,
-      keys: this.keys.map((k) => this.world.keys[k].door),
+      keys: this.keys.map((k) => ({ door: this.world.keys[k].door, master: k === 0 })),
       back: this.phase !== 'end' && this.room.spec.parent >= 0,
       backHover: this.hover === 'back',
-      title: this.phase === 'end' ? TEXT.escaped : null,
+      title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
     };
   }
 
@@ -273,7 +300,8 @@ export class Game {
       let dy = (it.cy - srcY) * it.depth * sh.perDepth;
       const len = Math.hypot(dx, dy);
       if (len > sh.maxOffset) { dx *= sh.maxOffset / len; dy *= sh.maxOffset / len; }
-      const glowA = it.glow * g.strength * (1 - g.pulse + g.pulse * Math.sin(this.time * 4));
+      const st = it.explored ? { ...g, ...g.explored } : g;
+      const glowA = it.glow * st.strength * (1 - st.pulse + st.pulse * Math.sin(this.time * 4));
       const rect = it.shake > 0
         ? [it.rect[0] + Math.sin(it.shake * 40) * 10 * it.shake, it.rect[1], it.rect[2], it.rect[3]]
         : it.rect;
@@ -281,8 +309,8 @@ export class Game {
         sprite: it.sprite,
         rect,
         shadow: [dx / it.rect[2], dy / it.rect[3], sh.blurBias + it.depth * sh.blurPerDepth, sh.strength],
-        glow: [g.color[0], g.color[1], g.color[2], glowA],
-        glowP: [g.bias, g.brighten],
+        glow: [st.color[0], st.color[1], st.color[2], glowA],
+        glowP: [g.bias, st.brighten],
         clip: it.clip,
       };
     });

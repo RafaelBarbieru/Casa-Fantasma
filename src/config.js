@@ -15,6 +15,9 @@ export const CONFIG = {
     wallMargin: 30,     // wall items (paintings) keep at least this many px above the floor line
   },
 
+  // When a key is found, the item sound plays this long after the painting sound.
+  itemSfxDelayS: 0.35,
+
   // Duration (s) of the shake when a locked door is tried.
   lockedShakeS: 0.35,
 
@@ -51,13 +54,21 @@ export const CONFIG = {
     rate: 10,           // fade in/out rate (1/s)
     pulse: 0.2,         // pulse amplitude while hovered
     brighten: 0.15,     // item self-brighten while hovered
+    // Glow for things with nothing left to find: a searched painting, or a door whose rooms behind it have all
+    // been fully explored (every painting searched, every door opened). Duller and still.
+    explored: {
+      color: [0.55, 0.62, 0.7],
+      strength: 0.6,
+      pulse: 0,
+      brighten: 0.03,
+    },
   },
 
   transition: {
     outS: 0.35,
     inS: 0.7,
-    winOutS: 1.6,       // slow fade after the exit door
-    winHoldS: 4,        // "you escaped" card before the next level (a tap skips it)
+    winOutS: 1.6,       // slow fade after the master door
+    winHoldS: 3,        // "Level N" card before the next level starts (a tap skips it)
   },
 
   // PS1 look: the scene renders into a small framebuffer, then is upscaled with hard pixels and
@@ -71,12 +82,17 @@ export const CONFIG = {
   },
 
   // Maze generator (src/world.js). Ranges are [min, max] inclusive.
+  // Every level has ONE master door (its key takes you to the next level). From level 2 on there are also
+  // side doors: locked rooms whose key is somewhere in the level; behind one of them may be the master key,
+  // the others hold nothing useful.
   maze: {
-    locks: 3,              // locked doors in a level. The last one is the exit.
     startDoors: 3,         // doors in the first room
     doors: [2, 3],         // doors in every other door room
     paintings: [1, 4],     // paintings in a painting room
-    roomsPerStage: [2, 4], // rooms opened up by each key (before the next locked door)
+    openRooms: [3, 6],     // rooms reachable without any key (not counting the first room)
+    sideRooms: [1, 3],     // rooms behind each locked side door
+    sideLocks: [0, 1, 2, 3], // locked side doors per level: level 1, 2, 3, 4+ (the last value repeats)
+    masterBehindChance: 0.6, // with side doors: chance the master key is behind one of them
     doorRoomChance: 0.45,  // when a door leads to a new room: chance it is a door room (else paintings)
   },
 
@@ -87,14 +103,17 @@ export const CONFIG = {
     back: { x: 960, y: 1015, w: 220, h: 100 }, // "go back" arrow hotspot, scene px
   },
 
-  // Sound effects: role -> path under assets/audio (no extension). All are decoded at boot.
+  // Sound effects: role -> every sound whose name (path in audio-src/, no extension) starts with `files`.
+  // One is picked at random each time. preload: 'all' (default, short sounds) | 'one' (long sounds, keeps one
+  // decoded at a time) | 'none' (not decoded until first played). Optional volume 0..1. See src/sfx.js.
   sfx: {
-    itemClick: 'sfx/keypress_01',  // painting searched
-    doorOpen: 'sfx/keypress_01',
-    doorLocked: 'sfx/keypress_01',
-    doorUnlock: 'sfx/keypress_01',
-    keyFound: 'sfx/keypress_01',
-    back: 'sfx/keypress_01',
+    door: { files: 'sfx/door' },                // opening a door (also going back)
+    locked: { files: 'sfx/locked' },            // trying a locked door without its key
+    painting: { files: 'sfx/painting' },        // looking behind a painting
+    item: { files: 'sfx/item' },                // picking up an item (a key)
+    levelEnd: { files: 'sfx/level_end' },       // the master door opens
+    levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins
+    ghostSpotted: { files: 'sfx/ghost_spotted', preload: 'none' }, // not used yet (no ghosts)
   },
 
   // Level ambience. Names are paths under audio-src without .wav (same as sfx).

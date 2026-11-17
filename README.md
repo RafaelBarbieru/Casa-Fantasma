@@ -26,22 +26,31 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 ## How to play
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
 - Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings).
-- Some doors are **locked**. Click a painting to look behind it: sometimes there's a key. Keys you hold appear at the top left, each with a small picture of the door it opens. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
+- Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
+- Click a painting to look behind it: sometimes there's a key. Keys you hold appear at the top left, each with a small picture of the door it opens. The **master key is gold**; other keys are grey. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
+- **Level 1** has only the master door locked. From **level 2** on there are also locked **side doors**: their keys are somewhere in the level, and behind them is either the master key or nothing useful.
 - Click the arrow at the bottom (**back**) to return to the room you came from.
-- One of the locked doors is the way out. Open it to escape, and a new level is generated.
-- The levels are always solvable: each key is found before the door it opens, in a room you can reach.
+- **The glow tells you what's left.** A warm, pulsing glow means there is still something to find there. A dull, still, grey-blue glow means there's nothing left:
+  - on a painting, you've already looked behind it;
+  - on a door, you've explored everything behind it: every painting searched and every door opened, all the way down.
+
+  A door with a locked door anywhere behind it that you haven't opened stays warm. So does the master door.
+- Levels are always solvable.
+- Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
 
 ### The maze settings
 `src/config.js` → `maze`:
-- `locks`: how many locked doors a level has (the last one is the exit).
 - `startDoors`, `doors`: doors in the first room, and in the other door rooms (`[2, 3]` = 2 or 3).
 - `paintings`: paintings in a painting room (`[1, 4]`).
-- `roomsPerStage`: how many new rooms each key opens up before the next locked door. Bigger = bigger maze.
+- `openRooms`: how many rooms you can reach without any key. Bigger = bigger maze.
+- `sideLocks: [0, 1, 2, 3]`: locked side doors in level 1, 2, 3, and 4 onwards (the last number repeats).
+- `sideRooms`: how many rooms are behind each side door.
+- `masterBehindChance`: when there are side doors, how often the master key is behind one of them (0.6 = 60%).
 - `doorRoomChance`: how often a door leads to more doors rather than paintings.
 
 Doors and paintings are never repeated inside the same room.
 The messages ("It's locked.", ...) are at the top of `src/game.js`.
-Sounds for doors, keys and the back arrow are in `src/config.js` → `sfx`. They all use `keypress_01` until you have real ones.
+The "Level N" card between levels and how long it stays are in `src/config.js` → `transition` (`winOutS`, `winHoldS`).
 
 ## Publishing
 
@@ -114,16 +123,28 @@ The game uses images, not 3D models, which is what keeps it light on phones.
 Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A GLB would force every player's device to render 3D in real time.
 
 ### Sounds
-- Export **WAV** files (48 kHz, 16 or 24-bit) into `audio-src/`. Use `audio-src/sfx/` for short effects and `audio-src/ambience/` for loops and music. You can add more folders.
+- Put sounds into `audio-src/`: **WAV** is best (48 kHz, 16 or 24-bit), but **OGG, MP3 and FLAC** also work. Use `audio-src/sfx/` for short effects and `audio-src/ambience/` for loops and music. You can add more folders.
 - Use **lowercase names without spaces**, e.g. `audio-src/sfx/door_creak01.wav`.
 - Export mono for sound effects and voice, stereo only where it matters (ambience, music). Mono files come out about half the size.
-- `npm run dev` and `npm run build` convert your WAVs automatically into `assets/audio/` in two formats:
+- `npm run dev` and `npm run build` convert your sounds automatically into `assets/audio/` in two formats:
   - `.ogg` (Opus), the main format;
   - `.m4a` (AAC), for older iPhones.
 
   Each player downloads only the one their device needs. To convert by hand, run `npm run audio`; to redo everything, run `npm run audio:force`.
-- The converted files are not saved in git, only your WAVs (via LFS). This needs **ffmpeg** installed, which you already have.
-- Which sound plays for what is set in `src/config.js` under `sfx`. For example, `itemClick: 'sfx/keypress_01'` plays when you click an item. Write the path inside `audio-src/` without `.wav`.
+- The converted files are not saved in git, only your originals (via LFS). This needs **ffmpeg** installed, which you already have.
+- **Game sounds work by name.** `src/config.js` → `sfx` says which name each event uses, and every file whose name **starts with** it is used, picked at random each time without repeating the same one twice in a row. To add a variation, just drop in a file such as `audio-src/sfx/painting07.ogg`: no config change needed.
+
+  | Name starts with | Plays when |
+  |---|---|
+  | `sfx/door` | a door opens (also when going back) |
+  | `sfx/locked` | you try a locked door without its key |
+  | `sfx/painting` | you look behind a painting |
+  | `sfx/item` | you pick up an item (a key), just after the painting sound |
+  | `sfx/level_end` | you open the master door |
+  | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
+  | `sfx/ghost_spotted` | registered, but not used yet (no ghosts) |
+
+  Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.
 - **Level ambience** is set in `src/config.js` under `ambience`:
   - `loops`: the background loops. Each level picks one of them at random and plays it on repeat. Add more names to the list to get more variety.
   - `loopVolume`, `fadeInS`, `fadeOutS`: how loud the loop is and how many seconds it takes to fade in and out.
@@ -146,7 +167,7 @@ All visual settings live in `src/config.js`, and you can change them freely:
   - `enabled: false` turns the whole effect off.
 - `flashlight`: beam size (`radius`), edge softness, how dark the darkness is (`ambient`), color tint, and how quickly the beam follows the pointer.
 - `shadow`: strength, blur, how far shadows move with the light.
-- `glow`: color, intensity, pulse.
+- `glow`: color, intensity, pulse. `glow.explored` is the dull look for things with nothing left to find.
 - `transition`: speed of the room-change fade and flicker.
 
 ## What's next

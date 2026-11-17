@@ -85,7 +85,7 @@ export class Hud {
     return lines;
   }
 
-  // state = { message, chars, keys:[doorArtId], back: bool, backHover: bool, title }
+  // state = { message, chars, keys:[{ door: doorArtId, master }], back: bool, backHover: bool, title }
   // Redraws only when something visible changed.
   update(st) {
     const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.title]);
@@ -98,11 +98,11 @@ export class Hud {
 
     // Keys held: pixel key + a thumbnail of the door it opens.
     let x = 8;
-    for (const door of st.keys) {
+    for (const { door, master } of st.keys) {
       const th = 22, sp = this.sprites.get(door);
       c.fillStyle = 'rgba(0,0,0,0.55)';
       c.fillRect(x - 2, 6, 12 + 2 + Math.round((th * (sp?.w ?? 10)) / (sp?.h ?? 16)) + 4, th + 4);
-      c.fillStyle = '#c9a227';
+      c.fillStyle = master ? '#c9a227' : '#8f948f'; // the master key is gold, side-door keys are iron
       KEY_ICON.forEach((row, r) => [...row].forEach((b, k) => b === '1' && c.fillRect(x + k, 14 + r, 1, 1)));
       if (sp) {
         const tw = Math.round((th * sp.w) / sp.h);

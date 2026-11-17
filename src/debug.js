@@ -1,10 +1,11 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
-// Keys while visible: N = new random world, K = take every key, B = jump back to the start room,
-// A = play a random ambience one-shot.
+// Keys while visible: N = new random world (same level), L = skip to the next level, K = take every key,
+// B = jump back to the start room, A = play a random ambience one-shot.
 import { CONFIG } from './config.js';
 
 export class Debug {
-  constructor({ game, renderer, regenerate, playRandomAmbience }) {
+  constructor({ game, renderer, regenerate, nextLevel, playRandomAmbience }) {
+    this.nextLevel = nextLevel;
     this.game = game;
     this.r = renderer;
     this.regenerate = regenerate;
@@ -23,6 +24,7 @@ export class Debug {
       if (!this.on) return;
       const g = this.game, k = e.key.toLowerCase();
       if (k === 'n') this.regenerate();
+      if (k === 'l') this.nextLevel();
       if (k === 'a') console.info('[casa] ambience one-shot', this.playRandomAmbience?.());
       if (k === 'k') {
         g.keys = g.world.keys.map((_, i) => i).filter((i) => !g.unlocked.has(this.lockUid(i)));
@@ -53,7 +55,7 @@ export class Debug {
   _text() {
     const g = this.game, v = this.r.view, s = g.room?.spec, w = g.world;
     const lines = [
-      `seed ${w.seed}`,
+      `level ${w.level}  seed ${w.seed}`,
       `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}`,
       `layout ${s?.template}  ${s?.wall} + ${s?.floor}`,
     ];
@@ -62,15 +64,16 @@ export class Debug {
       if (it.to !== undefined) t += it.to < 0 ? ' -> EXIT' : ` -> room ${it.to}`;
       if (it.lock !== undefined) t += ` [lock ${it.lock}]`;
       if (it.key !== undefined) t += ` {key ${it.key}}`;
+      if (g.room.items.find((x) => x.e === it)?.explored) t += '  (explored)';
       lines.push(t);
     }
-    w.keys.forEach((k, i) => lines.push(`  key ${i}: in room ${k.at}, opens ${k.door} in room ${k.room}`));
+    w.keys.forEach((k, i) => lines.push(`  ${i ? 'key ' + i : 'MASTER'}: in room ${k.at}, opens ${k.door} in room ${k.room}`));
     lines.push(
       `held [${g.keys.join(', ')}]`,
       `ambience ${w.ambience}`,
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
-      '[`] hide  [N] new world  [K] all keys  [B] start room  [A] one-shot',
+      '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot',
     );
     this.el.textContent = lines.join('\n');
   }

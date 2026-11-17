@@ -33,7 +33,24 @@ export async function loadSfx(names) {
   }));
 }
 
-export function playSfx(name, volume = 1) {
+export const hasSfx = (name) => buffers.has(name);
+export const unloadSfx = (name) => buffers.delete(name);
+
+// Every sound name tools/audio.mjs produced (assets/audio/index.json), e.g. 'sfx/painting03'.
+let index = [];
+export async function loadAudioIndex() {
+  try {
+    const r = await fetch('assets/audio/index.json');
+    if (!r.ok) throw new Error(r.status);
+    index = await r.json();
+  } catch (e) {
+    console.warn('[casa] no audio index (run npm run audio)', e);
+  }
+}
+export const audioNamesWithPrefix = (prefix) => index.filter((n) => n.startsWith(prefix));
+
+// delay: seconds from now (sample-accurate, so stacked sounds don't mask each other).
+export function playSfx(name, volume = 1, delay = 0) {
   const buf = buffers.get(name);
   if (!ctx || !buf) return;
   const src = ctx.createBufferSource();
@@ -46,7 +63,7 @@ export function playSfx(name, volume = 1) {
     node = g;
   }
   node.connect(ctx.destination);
-  src.start(0);
+  src.start(delay > 0 ? ctx.currentTime + delay : 0);
 }
 
 // --- Looping bed (level ambience): ONE reused <audio> element, streamed (not decoded), routed through a

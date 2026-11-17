@@ -1,12 +1,13 @@
 // Boot + on-demand render loop.
 import { Renderer } from './renderer.js';
 import { loadDB, loadAssets } from './assets.js';
-import { generateWorld, seedFromUrl } from './world.js';
+import { generateWorld, seedFromUrl, levelFromUrl } from './world.js';
 import { attachInput } from './input.js';
 import { Game } from './game.js';
 import { Debug } from './debug.js';
 import { Hud } from './hud.js';
-import { loadSfx, unlockAudio, playSfx } from './audio.js';
+import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex } from './audio.js';
+import { initSfx, playRole } from './sfx.js';
 import { CONFIG } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience } from './ambience.js';
 
@@ -21,27 +22,35 @@ async function boot() {
     return;
   }
 
-  const db = await loadDB();
+  const [db] = await Promise.all([loadDB(), loadAudioIndex()]);
   const [assets] = await Promise.all([
     loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
-    loadSfx([...new Set([...Object.values(CONFIG.sfx), ...CONFIG.ambience.random.pool])]),
+    initSfx(),
+    loadSfx(CONFIG.ambience.random.pool),
   ]);
 
   const game = new Game({ db, assets });
   const hud = new Hud(assets.sprites);
-  const newWorld = (seed) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze });
-  const regenerate = (seed) => {
-    game.setWorld(newWorld(seed ?? (game.world.seed + 1) >>> 0));
+  const newWorld = (seed, level) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze, level });
+  // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
+  const startLevel = (seed, level) => {
+    game.setWorld(newWorld(seed, level));
     setLevelAmbience(game.world);
+    if (audioUnlocked()) playRole('levelStart'); // the first level's sound plays on the start-overlay tap
+    console.info('[casa] level', level, 'seed', game.world.seed, game.world);
     wake();
   };
-  game.onWorldEnd = () => regenerate();
-  game.onSfx = (role) => CONFIG.sfx[role] && playSfx(CONFIG.sfx[role]);
-  const debug = new Debug({ game, renderer, regenerate: () => regenerate((Math.random() * 2 ** 32) >>> 0), playRandomAmbience });
+  game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
+  game.onSfx = (role, delay) => playRole(role, delay);
+  const debug = new Debug({
+    game, renderer, playRandomAmbience,
+    regenerate: () => startLevel((Math.random() * 2 ** 32) >>> 0, game.world.level),
+    nextLevel: () => game.onWorldEnd(),
+  });
   game.onRoomChange = () => debug.refresh();
-  game.setWorld(newWorld(seedFromUrl()));
+  game.setWorld(newWorld(seedFromUrl(), levelFromUrl()));
   setLevelAmbience(game.world); // queued; starts on the start-overlay gesture
-  console.info('[casa] seed', game.world.seed, game.world);
+  console.info('[casa] level', game.world.level, 'seed', game.world.seed, game.world);
 
   // --- loop: renders only while something changes (battery-friendly on mobile)
   let raf = 0, last = 0, dirty = true;
@@ -90,6 +99,7 @@ async function boot() {
   overlay.addEventListener('pointerdown', () => {
     overlay.classList.add('hidden');
     unlockAudio();
+    playRole('levelStart');
     startRandomAmbience();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
     game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking

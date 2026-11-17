@@ -1,6 +1,7 @@
-// WAV masters -> web audio (zero npm deps, needs ffmpeg + ffprobe on PATH, or set FFMPEG / FFPROBE env vars).
+// Audio sources -> web audio (zero npm deps, needs ffmpeg + ffprobe on PATH, or set FFMPEG / FFPROBE env vars).
 //   node tools/audio.mjs [--force]
-// audio-src/**/*.wav  ->  assets/audio/**/<name>.ogg (Opus) + <name>.m4a (AAC fallback for older Safari)
+// audio-src/**/*.wav|ogg|mp3|flac  ->  assets/audio/**/<name>.ogg (Opus) + <name>.m4a (AAC fallback for older Safari)
+// Also writes assets/audio/index.json (every sound name), so the game can find sounds by prefix ("sfx/painting").
 // Incremental: skips files whose outputs are newer than the source. Deletes outputs whose source is gone.
 // Outputs are generated (gitignored). Runtime picks one format per device (src/audio.js), so players download one copy.
 import fs from 'node:fs';
@@ -28,11 +29,18 @@ const walk = (dir, rel = '') =>
         e.isDirectory() ? walk(path.join(dir, e.name), rel + e.name + '/') : [rel + e.name])
     : [];
 
-const sources = walk(SRC).filter((f) => /\.wav$/i.test(f));
+const SRC_EXT = /\.(wav|ogg|mp3|flac)$/i;
+const sources = walk(SRC).filter((f) => SRC_EXT.test(f));
 const expected = new Set();
+const names = new Map(); // name -> source rel (two sources with one name would overwrite each other)
 const jobs = [];
 for (const rel of sources) {
-  const base = rel.replace(/\.wav$/i, '');
+  const base = rel.replace(SRC_EXT, '');
+  if (names.has(base)) {
+    console.warn(`! audio-src/${rel}: ignored, audio-src/${names.get(base)} already makes ${base}`);
+    continue;
+  }
+  names.set(base, rel);
   if (base !== base.toLowerCase() || /\s/.test(base))
     console.warn(`! audio-src/${rel}: prefer lowercase names without spaces (web paths are case-sensitive)`);
   const src = path.join(SRC, rel);
@@ -52,6 +60,12 @@ for (const rel of walk(OUT)) {
     console.log(`- removed orphan assets/audio/${rel}`);
   }
 }
+
+// Sound index for the runtime (only rewritten when it changes, so it doesn't look modified on every run).
+const indexFile = path.join(OUT, 'index.json');
+const index = JSON.stringify([...names.keys()].sort(), null, 1) + '\n';
+fs.mkdirSync(OUT, { recursive: true });
+if (!fs.existsSync(indexFile) || fs.readFileSync(indexFile, 'utf8') !== index) fs.writeFileSync(indexFile, index);
 
 if (!jobs.length) {
   console.log(`✓ audio up to date (${sources.length} source${sources.length === 1 ? '' : 's'})`);

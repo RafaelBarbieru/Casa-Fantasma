@@ -2,11 +2,17 @@
   "walls": {
     "wall01": { "src": "assets/wall01.webp", "tile": 512 },
     "wall02": { "src": "assets/wall02.webp", "tile": 512 },
-    "wall03": { "src": "assets/wall03.webp", "tile": 512 }
+    "wall03": { "src": "assets/wall03.webp", "tile": 512 },
+    "wall04": { "src": "assets/wall04.webp", "tile": 512 },
+    "wall05": { "src": "assets/wall05.webp", "tile": 512 },
+    "wall06": { "src": "assets/wall06.webp", "tile": 512 }
   },
   "floors": {
     "floor01": { "src": "assets/floor01.webp", "tile": 640 },
     "floor02": { "src": "assets/floor02.webp", "tile": 640 },
-    "floor03": { "src": "assets/floor03.webp", "tile": 640 }
+    "floor03": { "src": "assets/floor03.webp", "tile": 640 },
+    "floor04": { "src": "assets/floor04.webp", "tile": 640 },
+    "floor05": { "src": "assets/floor05.webp", "tile": 640 },
+    "floor06": { "src": "assets/floor06.webp", "tile": 640 }
   }
 }
