@@ -73,6 +73,18 @@ File names are **case-sensitive** once online (`Painting01.webp` ≠ `painting01
 The game uses images, not 3D models, which is what keeps it light on phones.
 Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A GLB would force every player's device to render 3D in real time.
 
+### Sounds
+- Export **WAV** files (48 kHz, 16 or 24-bit) into `audio-src/`. Use `audio-src/sfx/` for short effects and `audio-src/ambience/` for loops and music. You can add more folders.
+- Use **lowercase names without spaces**, e.g. `audio-src/sfx/door_creak01.wav`.
+- Export mono for sound effects and voice, stereo only where it matters (ambience, music). Mono files come out about half the size.
+- `npm run dev` and `npm run build` convert your WAVs automatically into `assets/audio/` in two formats:
+  - `.ogg` (Opus), the main format;
+  - `.m4a` (AAC), for older iPhones.
+
+  Each player downloads only the one their device needs. To convert by hand, run `npm run audio`; to redo everything, run `npm run audio:force`.
+- The converted files are not saved in git, only your WAVs (via LFS). This needs **ffmpeg** installed, which you already have.
+- Loops: cut at a silent or zero-crossing point so they don't click when they repeat, and keep loudness roughly even across files.
+
 ## Tweaking the look
 All visual settings live in `src/config.js`, and you can change them freely:
 - `flashlight`: beam size (`radius`), edge softness, how dark the darkness is (`ambient`), color tint, and how quickly the beam follows the pointer.

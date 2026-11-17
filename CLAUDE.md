@@ -19,6 +19,20 @@ The user said "GLB", but they actually deliver **pre-rendered WebP**:
 - Items: `assets/items/*.webp`, with alpha, cropped. On screen size = native px × `item.scale` × `slot.scale`.
 Do not add a 3D runtime unless the user explicitly asks for one.
 
+## Repo
+- GitHub `RafaelBarbieru/Casa-Fantasma`, branch `master`.
+- Git LFS tracks images and audio (see `.gitattributes`). `dist/` and `assets/audio/` (generated) are gitignored.
+
+## Audio pipeline
+- Masters are `audio-src/**/*.wav`, tracked with LFS and never shipped.
+- `tools/audio.mjs` (runs from the predev, predev:lan and prebuild hooks) uses ffmpeg to write `assets/audio/**/<name>.ogg` (Opus) and `<name>.m4a` (AAC).
+  - It is incremental (by mtime), deletes orphaned outputs, and preserves the channel count (mono or stereo, >2 downmixed).
+  - Bitrates are in `RATES`: Opus 64k mono / 112k stereo, AAC 96k / 160k. Sample rate is 48 kHz.
+- `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred). It is not wired into gameplay yet.
+  - Plan: short SFX go through `decodeAudioData` into AudioBuffers.
+  - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
+  - Decode during loading or room transitions, not mid-interaction.
+
 ## Layout
 ```
 index.html          canvas, start overlay, rotate hint, debug CSS

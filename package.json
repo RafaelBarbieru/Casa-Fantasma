@@ -5,8 +5,13 @@
   "type": "module",
   "description": "Point-and-click pre-rendered horror game. Vanilla JS + raw WebGL, no engine, no dependencies.",
   "scripts": {
+    "audio": "node tools/audio.mjs",
+    "audio:force": "node tools/audio.mjs --force",
+    "predev": "node tools/audio.mjs",
     "dev": "node tools/serve.mjs",
+    "predev:lan": "node tools/audio.mjs",
     "dev:lan": "node tools/serve.mjs --lan",
+    "prebuild": "node tools/audio.mjs",
     "build": "node tools/build.mjs",
     "preview": "node tools/serve.mjs --dir=dist/web"
   }
