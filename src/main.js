@@ -34,7 +34,7 @@ async function boot() {
   const hud = new Hud(assets.sprites);
   // avoidAmbience: the previous level's loop, so two levels in a row never share one.
   const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
-    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, level,
+    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   const startLevel = (seed, level) => {
@@ -45,9 +45,10 @@ async function boot() {
     wake();
   };
   game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
-  // Health 0 -> screamer -> start over from level 1 with a new maze and full health.
+  // Health 0 -> screamer -> start over from level 1 with a new maze, full health and no pills.
   game.onDeath = () => {
     game.health = 1;
+    game.pills = 0;
     startLevel((Math.random() * 2 ** 32) >>> 0, 1);
   };
   game.onSfx = (role, delay) => playRole(role, delay);

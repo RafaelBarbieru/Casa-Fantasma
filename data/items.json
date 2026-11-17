@@ -23,5 +23,6 @@
   "door14":     { "src": "assets/door14.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
   "door15":     { "src": "assets/door15.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
   "door16":     { "src": "assets/door16.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
-  "door17":     { "src": "assets/door17.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] }
+  "door17":     { "src": "assets/door17.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
+  "health":     { "src": "assets/health.webp", "placement": [] }
 }

@@ -12,7 +12,8 @@
 //     items: [{ item, slot,           item = data/items.json id, slot = slot id in the template
 //               to?: index | EXIT,    doors only: target room (EXIT = the master door: next level)
 //               lock?: keyIndex,      doors only: locked until key `lock` is used on it
-//               key?: keyIndex }],    paintings only: a key is hidden behind it
+//               key?: keyIndex,       paintings only: a key is hidden behind it
+//               pill?: true }],       paintings only: a pill is hidden behind it (never with a key)
 //   }],
 //   keys: [{ door: itemId, room, at }]  key k opens the door with art `door` in rooms[room]; it is hidden in rooms[at].
 // }                                     keys[0] is the MASTER key (opens the exit door).
@@ -32,7 +33,7 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
-export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, level = 1 } = {}) {
+export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, level = 1 } = {}) {
   const rng = createRng(seed);
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
@@ -198,6 +199,13 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
   keys.forEach((k, i) => {
     if (!k.door) k.door = out[k.room].items.find((it) => it.lock === i).item;
   });
+
+  // Pills: on their own random stream, so tuning them never changes a seed's layout. Any painting without a key.
+  const prng = createRng((seed ^ 0x50111e5) >>> 0);
+  const expected = perLevel(pills.perLevel);
+  const nPills = Math.floor(expected) + (prng.next() < expected % 1 ? 1 : 0);
+  const spots = out.flatMap((r) => (r.kind === 'paintings' ? r.items.filter((it) => it.key === undefined) : []));
+  for (const it of prng.shuffle(spots).slice(0, nPills)) it.pill = true;
 
   // Picked last so adding/removing loops never changes a seed's layout.
   const loops = ambience.length > 1 ? ambience.filter((a) => a !== avoidAmbience) : ambience;

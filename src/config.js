@@ -101,6 +101,7 @@ export const CONFIG = {
     textCps: 45,        // typewriter speed, characters per second
     messageS: 3.2,      // how long a message stays after it is fully typed
     back: { x: 960, y: 1015, w: 220, h: 100 }, // "go back" arrow hotspot, scene px
+    pills: { x: 1800, y: 75, w: 240, h: 130 },  // pill icon + count (top right) and its tap hotspot, scene px
   },
 
   // Sound effects: role -> every sound whose name (path in audio-src/, no extension) starts with `files`.
@@ -118,6 +119,7 @@ export const CONFIG = {
     heartbeatSlow: { files: 'sfx/heartbeat_slow' },
     heartbeatFast: { files: 'sfx/heartbeat_fast' },
     screamer: { files: 'sfx/screamer' },        // health reached 0
+    healed: { files: 'sfx/healed' },            // a pill is taken
   },
 
   // Ghosts (data/ghosts.json). Per-level lists: index 0 = level 1, the last value repeats.
@@ -135,6 +137,16 @@ export const CONFIG = {
     fadeInS: 1.5,       // ...over this long
     gain: 3.2,          // ghost brightness (the art is very dark; the PS1 color reduction eats faint detail)
     drift: 10,          // slow floating movement, scene px
+  },
+
+  // Pills (art: data/items.json "health"), hidden behind paintings that hold no key. They are kept until used
+  // (also across levels; lost on death). Tapping the pill icon at the top right takes one.
+  pills: {
+    heal: 0.5,          // health restored per pill, as a fraction of FULL health (capped at 100%)
+    // Pills hidden per level (index 0 = level 1, the last value repeats). The whole part is always placed, the
+    // fraction is the chance of one more: 0.35 = a 35% chance of one pill, 1.5 = one pill plus a 50% chance of a
+    // second. Kept rare early (one pill heals most of the way) and rising with the ghosts (config.ghost).
+    perLevel: [0, 0.35, 0.6, 1, 1.3, 1.6],
   },
 
   // Hidden health is only heard: nothing above `start`; slow heartbeat down to `fastBelow`, fast heartbeat below.

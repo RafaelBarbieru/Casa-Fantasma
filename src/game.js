@@ -17,6 +17,8 @@ const TEXT = {
   keyFound: ['There is a key behind the painting.', 'A key was hidden behind the painting.'],
   nothing: ['Nothing behind it.', 'Only dust behind the frame.', 'Nothing.'],
   searched: ['You already looked behind this one.'],
+  pillFound: ['There is a bottle of pills behind the painting.', 'Pills, hidden behind the frame.'],
+  healed: ['You swallow a pill. You feel better.'],
   level: (n) => `Level ${n}`,
 };
 
@@ -52,6 +54,7 @@ export class Game {
     this.lastPointer = null;
     // Ghosts. health is hidden (only heard through the heartbeat) and carries over between levels.
     this.health = 1;
+    this.pills = 0;       // pills held. Like health, they carry over between levels (main resets both on death)
     this.ghost = null;    // ghost in the current room: { id, sprite, s, x, y, random, t, alpha, cued }
     this.lamp = 1;        // flashlight: 1 on, 0 off (a ghost kills it). Multiplies exposure.
     this.spawnAt = null;  // performance.now() ms when a random ghost appears in this room, or null
@@ -199,7 +202,7 @@ export class Game {
     this.lastPointer = { p, kind };
     const h = this.phase === 'idle' ? this.hit(p, kind) : null;
     // With a ghost in the room nothing glows: you have to remember where the doors were.
-    this.hover = this.ghost && h !== 'back' ? null : h;
+    this.hover = this.ghost && h !== 'back' && h !== 'pill' ? null : h;
   }
 
   pointerDown(p, kind) {
@@ -222,6 +225,7 @@ export class Game {
       this.onSfx?.('door');
       return void this.go(this.room.spec.parent);
     }
+    if (h === 'pill') return void this.usePill();
     const e = h.e;
     if (e.to !== undefined) {
       // Door
@@ -244,7 +248,7 @@ export class Game {
     // Painting
     this.onSfx?.('painting');
     if (this.searched.has(h.uid)) {
-      this.say(pickText(e.key !== undefined ? TEXT.searched : TEXT.nothing));
+      this.say(pickText(e.key !== undefined || e.pill ? TEXT.searched : TEXT.nothing));
       return;
     }
     this.searched.add(h.uid);
@@ -253,9 +257,23 @@ export class Game {
       this.keys.push(e.key);
       this.say(pickText(TEXT.keyFound));
       this.onSfx?.('item', CONFIG.itemSfxDelayS);
+    } else if (e.pill) {
+      this.pills++;
+      this.say(pickText(TEXT.pillFound));
+      this.onSfx?.('item', CONFIG.itemSfxDelayS);
     } else {
       this.say(pickText(TEXT.nothing));
     }
+  }
+
+  // Take a pill: heals a fixed share of FULL health, capped at full. Always consumed, even at full health
+  // (health is hidden, so the game never tells you it was not needed).
+  usePill() {
+    if (this.pills <= 0) return;
+    this.pills--;
+    this.health = Math.min(1, this.health + CONFIG.pills.heal);
+    this.say(pickText(TEXT.healed));
+    this.onSfx?.('healed');
   }
 
   _maskAt(it, x, y) {
@@ -275,9 +293,11 @@ export class Game {
     return false;
   }
 
-  // Returns the item under p (topmost = last drawn), 'back', or null.
+  // Returns the item under p (topmost = last drawn), 'back', 'pill' (the HUD pill icon), or null.
   hit(p, kind) {
     if (!this.room) return null;
+    const pl = CONFIG.hud.pills;
+    if (this.pills > 0 && Math.abs(p.x - pl.x) <= pl.w / 2 && Math.abs(p.y - pl.y) <= pl.h / 2) return 'pill';
     const b = CONFIG.hud.back;
     if (this.room.spec.parent >= 0 && Math.abs(p.x - b.x) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2) return 'back';
     const items = this.room.items;
@@ -381,6 +401,8 @@ export class Game {
       keys: this.phase === 'dead' ? [] : this.keys.map((k) => ({ door: this.world.keys[k].door, master: k === 0 })),
       back: this.phase !== 'end' && this.phase !== 'dead' && this.room.spec.parent >= 0,
       backHover: this.hover === 'back',
+      pills: this.phase === 'dead' || this.phase === 'end' ? 0 : this.pills,
+      pillHover: this.hover === 'pill',
       title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
     };
   }

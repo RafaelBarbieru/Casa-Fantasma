@@ -85,10 +85,10 @@ export class Hud {
     return lines;
   }
 
-  // state = { message, chars, keys:[{ door: doorArtId, master }], back: bool, backHover: bool, title }
+  // state = { message, chars, keys:[{ door: doorArtId, master }], back, backHover, pills: count, pillHover, title }
   // Redraws only when something visible changed.
   update(st) {
-    const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.title]);
+    const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.pills, st.pillHover, st.title]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.version++;
@@ -109,6 +109,19 @@ export class Hud {
         c.drawImage(sp.canvas, sp.ox, sp.oy, sp.w, sp.h, x + 10, 8, tw, th);
         x += 10 + tw + 10;
       } else x += 20;
+    }
+
+    // Pills held (top right): the pill art + count. Tapping it takes one (Game.hit -> 'pill').
+    const pillSp = this.sprites.get('health');
+    if (st.pills > 0 && pillSp) {
+      const p = CONFIG.hud.pills, cx = this.sx(p.x), cy = this.sy(p.y), sz = 22;
+      const label = 'x' + st.pills, lw = textWidth(label);
+      const x0 = cx - ((sz + 3 + lw) >> 1);
+      c.fillStyle = st.pillHover ? 'rgba(60,48,30,0.8)' : 'rgba(0,0,0,0.55)';
+      c.fillRect(x0 - 3, cy - (sz >> 1) - 2, sz + 3 + lw + 6, sz + 4);
+      c.drawImage(pillSp.canvas, pillSp.ox, pillSp.oy, pillSp.w, pillSp.h, x0, cy - (sz >> 1), sz, sz);
+      this.text(label, x0 + sz + 3, cy - 3, st.pillHover ? '#e8dcc0' : '#a89c84');
+      if (st.pillHover) this.text('USE', cx - (textWidth('USE') >> 1), cy + (sz >> 1) + 4, '#e8dcc0');
     }
 
     // Back arrow (a down chevron) at the bottom.

@@ -20,7 +20,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - `?debug`: shows the debug panel (seed, room, item, slot positions). You can also press the **`** key at any time.
   - The panel lists what's in the current room (where each door leads, which are locked, which painting hides a key) and where every key is.
   - With the panel open: **N** generates a new random level, **K** gives you every key, **B** jumps back to the first room.
-  - Ghost testing: **G** makes a ghost appear in the current room, **D** takes away 20% health, **H** restores full health. The panel shows your hidden health.
+  - Ghost testing: **G** makes a ghost appear in the current room, **D** takes away 20% health, **H** restores full health, **P** gives you a pill. The panel shows your hidden health and which rooms hide pills (`{pill}` next to the painting).
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
 
@@ -51,6 +51,8 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - after losing 5%, a slow heartbeat starts, about one beat a second;
   - it speeds up as health falls, switches to a fast heartbeat below 50%, and keeps getting faster towards 0.
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
+- **Pills** are hidden behind some paintings (never one that hides a key). They pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
+  - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
 - At 0% a screamer flashes on screen with a scream, and the game starts over from level 1.
 
 `src/config.js`:
@@ -64,6 +66,11 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - `lampOffS`, `fadeDelayS`, `fadeInS`: timings for the flashlight dying and the ghost fading in.
   - `gain`: how bright the ghosts are.
   - `drift`: how much they float.
+- `pills`:
+  - `heal`: how much one pill heals, as a share of full health (0.5 = 50%).
+  - `perLevel`: pills hidden per level. The whole number is always placed and the fraction is the chance of one more (0.35 = 35% chance of one pill; 1.5 = one pill plus a 50% chance of a second). The last value repeats.
+  - Changing these never changes the rest of a seed's layout.
+  - The pill picture is `art-src/health.png`; the icon's position is `hud.pills`.
 - `heartbeat`: when it starts, when it switches to fast, and the gaps between beats.
 - `screamer`: how long it lasts and how fast it flashes.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
@@ -189,6 +196,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
   | `sfx/heartbeat_fast` | heartbeat, health below 50% |
   | `sfx/screamer` | health reached 0 |
+  | `sfx/healed` | you take a pill |
 
   Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.
 - **Level ambience** is set in `src/config.js` under `ambience`:

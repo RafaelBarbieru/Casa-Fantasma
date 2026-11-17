@@ -1,7 +1,7 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
 // Keys while visible: N = new random world (same level), L = skip to the next level, K = take every key,
 // B = jump back to the start room, A = play a random ambience one-shot, G = random ghost now, H = full health,
-// D = lose 20% health.
+// D = lose 20% health, P = get a pill.
 import { CONFIG } from './config.js';
 
 export class Debug {
@@ -35,6 +35,7 @@ export class Debug {
       if (k === 'g') g.spawnRandomGhost();
       if (k === 'h') g.health = 1;
       if (k === 'd') g.health = Math.max(0.01, g.health - 0.2);
+      if (k === 'p') g.pills++;
     });
     this.refresh();
   }
@@ -70,17 +71,19 @@ export class Debug {
       if (it.to !== undefined) t += it.to < 0 ? ' -> EXIT' : ` -> room ${it.to}`;
       if (it.lock !== undefined) t += ` [lock ${it.lock}]`;
       if (it.key !== undefined) t += ` {key ${it.key}}`;
+      if (it.pill) t += ' {pill}';
       if (g.room.items.find((x) => x.e === it)?.explored) t += '  (explored)';
       lines.push(t);
     }
     w.keys.forEach((k, i) => lines.push(`  ${i ? 'key ' + i : 'MASTER'}: in room ${k.at}, opens ${k.door} in room ${k.room}`));
     lines.push(
-      `held [${g.keys.join(', ')}]`,
+      `held [${g.keys.join(', ')}]  pills ${g.pills}  (level has ${w.rooms.reduce((n, r) => n + r.items.filter((it) => it.pill).length, 0)},` +
+        ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
       `ambience ${w.ambience}`,
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
       '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot',
-      '[G] ghost  [H] heal  [D] -20% health',
+      '[G] ghost  [H] heal  [D] -20% health  [P] +1 pill',
     );
     this.el.textContent = lines.join('\n');
   }
