@@ -4,6 +4,8 @@
 import { CONFIG } from './config.js';
 import { VS, FS_BG, FS_ITEM, FS_HUD, FS_POST } from './shaders.js';
 
+const NO_FX = [0, 1, 1, 0];
+
 export class Renderer {
   static create(canvas) {
     const r = new Renderer(canvas);
@@ -231,8 +233,20 @@ export class Renderer {
         gl.uniform4fv(u.uGlow, it.glow);
         gl.uniform2fv(u.uGlowP, it.glowP);
         gl.uniform1f(u.uClip, it.clip ?? 2);
+        gl.uniform4fv(u.uFx, it.fx ?? NO_FX);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
+    }
+
+    // Full-scene overlay image (the screamer): plain textured quad, unlit.
+    if (frame.overlay) {
+      gl.disable(gl.BLEND);
+      gl.useProgram(this.pHud.p);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture(frame.overlay.img, false));
+      gl.uniform2f(this.pHud.u.uScene, CONFIG.sceneW, CONFIG.sceneH);
+      gl.uniform4fv(this.pHud.u.uRect, frame.overlay.rect);
+      gl.uniform1i(this.pHud.u.uTex, 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
     if (hud) {

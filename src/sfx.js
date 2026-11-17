@@ -24,7 +24,7 @@ export async function initSfx() {
   await loadSfx([...new Set(jobs.flat())]);
 }
 
-// delay in seconds.
+// delay in seconds. Returns the played sound's duration (s), or undefined if nothing played.
 export function playRole(role, delay = 0) {
   const r = roles.get(role);
   if (!r || !r.names.length) return;
@@ -38,10 +38,11 @@ export function playRole(role, delay = 0) {
   const options = ready.length > 1 ? ready.filter((n) => n !== r.last) : ready;
   const name = pick(options);
   r.last = name;
-  playSfx(name, r.volume, delay);
+  const dur = playSfx(name, r.volume, delay);
   if (r.preload === 'one' && r.names.length > 1) {
     // Swap: decode a different one for next time, then free this one (a playing source keeps its own buffer).
     const next = pick(r.names.filter((n) => n !== name));
     loadSfx([next]).then(() => unloadSfx(name));
   }
+  return dur;
 }

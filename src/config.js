@@ -113,7 +113,43 @@ export const CONFIG = {
     item: { files: 'sfx/item' },                // picking up an item (a key)
     levelEnd: { files: 'sfx/level_end' },       // the master door opens
     levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins
-    ghostSpotted: { files: 'sfx/ghost_spotted', preload: 'none' }, // not used yet (no ghosts)
+    flashlight: { files: 'sfx/flashligh' },     // the flashlight dies when a ghost appears (matches flashligh01 too)
+    ghostSpotted: { files: 'sfx/ghost_spotted', preload: 'one' }, // the ghost fades in
+    heartbeatSlow: { files: 'sfx/heartbeat_slow' },
+    heartbeatFast: { files: 'sfx/heartbeat_fast' },
+    screamer: { files: 'sfx/screamer' },        // health reached 0
+  },
+
+  // Ghosts (data/ghosts.json). Per-level lists: index 0 = level 1, the last value repeats.
+  ghost: {
+    roomChance: [0, 0.3, 0.35, 0.4, 0.45, 0.5], // chance a dead-end door leads to a ghost-only (black) room.
+                                                 // Levels with a chance > 0 get at least one when possible.
+    randomPerMin: [0, 0, 1, 1.5, 2, 2.5],       // random ghost appearances per minute spent in a room (not the
+                                                 // first room of a level, not ghost rooms). 0 = never.
+    graceS: 2,          // no random ghost in the first seconds after entering a room
+    lingerS: [1, 10],   // after you escape a random ghost, it stays in that room this long (random in range)
+    drainPerS: 0.12,    // health lost per second in a room with a ghost (0.12 = dead in ~8 s)
+    regenPerS: 0,       // health regained per second away from ghosts (0 = never heals)
+    lampOffS: 0.3,      // the flashlight flickers this long, then dies
+    fadeDelayS: 0.4,    // then the ghost starts to fade in...
+    fadeInS: 1.5,       // ...over this long
+    gain: 3.2,          // ghost brightness (the art is very dark; the PS1 color reduction eats faint detail)
+    drift: 10,          // slow floating movement, scene px
+  },
+
+  // Hidden health is only heard: nothing above `start`; slow heartbeat down to `fastBelow`, fast heartbeat below.
+  // Gap between beats (s) goes from the first value to the second as health falls through each band.
+  heartbeat: {
+    start: 0.95,
+    fastBelow: 0.5,
+    slowGapS: [1.0, 0.3],
+    fastGapS: [0.6, 0.05],
+  },
+
+  // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the game restarts at level 1.
+  screamer: {
+    holdS: 3.2,
+    flashHz: 12,
   },
 
   // Level ambience. Names are paths under audio-src without .wav (same as sfx).

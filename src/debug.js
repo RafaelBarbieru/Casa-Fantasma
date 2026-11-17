@@ -1,6 +1,7 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
 // Keys while visible: N = new random world (same level), L = skip to the next level, K = take every key,
-// B = jump back to the start room, A = play a random ambience one-shot.
+// B = jump back to the start room, A = play a random ambience one-shot, G = random ghost now, H = full health,
+// D = lose 20% health.
 import { CONFIG } from './config.js';
 
 export class Debug {
@@ -31,6 +32,9 @@ export class Debug {
         this.refresh();
       }
       if (k === 'b') g.enterRoom(0);
+      if (k === 'g') g.spawnRandomGhost();
+      if (k === 'h') g.health = 1;
+      if (k === 'd') g.health = Math.max(0.01, g.health - 0.2);
     });
     this.refresh();
   }
@@ -58,6 +62,8 @@ export class Debug {
       `level ${w.level}  seed ${w.seed}`,
       `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}`,
       `layout ${s?.template}  ${s?.wall} + ${s?.floor}`,
+      `health ${(g.health * 100).toFixed(0)}%  ghost ${g.ghost ? g.ghost.id + (g.ghost.random ? ' (random)' : ' (room)') : '-'}` +
+        `  next random ghost ${g.spawnAt === null ? '-' : ((g.spawnAt - performance.now()) / 1000).toFixed(0) + ' s'}`,
     ];
     for (const it of s?.items ?? []) {
       let t = `  ${it.item} @ ${it.slot}`;
@@ -74,6 +80,7 @@ export class Debug {
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
       '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot',
+      '[G] ghost  [H] heal  [D] -20% health',
     );
     this.el.textContent = lines.join('\n');
   }

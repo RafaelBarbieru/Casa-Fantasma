@@ -67,18 +67,19 @@ uniform vec4 uShadow;  // uv offset x, y, mip bias, strength
 uniform vec4 uGlow;    // rgb, amount (0 = off)
 uniform vec2 uGlowP;   // mip bias, self-brighten
 uniform float uClip;   // texture v below which glow + shadow are cut (floor items); > 1 = no cut
+uniform vec4 uFx;      // self-lit 0..1 (ignores the flashlight), opacity, brightness, additive 0..1 (ghosts)
 void main() {
   vec4 s = texture2D(uTex, vUv);
   float under = (1.0 - s.a) * step(vUv.y, uClip);
   float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under;
-  float L = lightAt(vP);
-  vec3 col = s.rgb * uTint * L * (1.0 + uGlowP.y * uGlow.a);
+  float L = mix(lightAt(vP), 1.0, uFx.x);
+  vec3 col = s.rgb * mix(uTint, vec3(1.0), uFx.x) * L * uFx.z * (1.0 + uGlowP.y * uGlow.a);
   if (uGlow.a > 0.001) {
     float b = texture2D(uTex, vUv, uGlowP.x).a;
     float g = smoothstep(0.0, 0.5, b) * under * uGlow.a;
     col += uGlow.rgb * g * (0.3 + 0.7 * min(L, 1.0));
   }
-  gl_FragColor = vec4(col + dither() * s.a, s.a + sh);
+  gl_FragColor = vec4(col + dither() * s.a, (s.a + sh) * (1.0 - uFx.w)) * uFx.y;
 }`;
 
 // HUD layer: premultiplied canvas texture, no lighting.

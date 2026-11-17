@@ -8,9 +8,9 @@ export async function loadJSON(url) {
 }
 
 export async function loadDB() {
-  const [items, rooms, surfaces] = await Promise.all(
-    ['data/items.json', 'data/rooms.json', 'data/surfaces.json'].map(loadJSON));
-  return { items, rooms, surfaces };
+  const [items, rooms, surfaces, ghosts] = await Promise.all(
+    ['data/items.json', 'data/rooms.json', 'data/surfaces.json', 'data/ghosts.json'].map(loadJSON));
+  return { items, rooms, surfaces, ghosts };
 }
 
 export async function loadImage(url) {
@@ -53,7 +53,9 @@ export async function loadAssets(db, onProgress = () => {}) {
   for (const group of ['walls', 'floors'])
     for (const [id, t] of Object.entries(db.surfaces[group])) jobs.push(['surface', id, t.src]);
   for (const [id, it] of Object.entries(db.items)) jobs.push(['item', id, it.src]);
-  const out = { surfaces: new Map(), sprites: new Map() };
+  for (const [id, g] of Object.entries(db.ghosts.ghosts)) jobs.push(['item', id, g.src]);
+  for (const [id, g] of Object.entries(db.ghosts.screamers)) jobs.push(['screamer', id, g.src]);
+  const out = { surfaces: new Map(), sprites: new Map(), screamers: new Map() };
   let done = 0;
   await Promise.all(
     jobs.map(async ([kind, id, src]) => {
@@ -62,7 +64,7 @@ export async function loadAssets(db, onProgress = () => {}) {
         if (!isPot(img.naturalWidth) || !isPot(img.naturalHeight))
           console.warn(`[casa] ${src} is ${img.naturalWidth}x${img.naturalHeight}; tiling textures must be power-of-two (256, 512...)`);
         out.surfaces.set(id, img);
-      }
+      } else if (kind === 'screamer') out.screamers.set(id, img);
       else out.sprites.set(id, makeSprite(img));
       onProgress(++done / jobs.length);
     }),

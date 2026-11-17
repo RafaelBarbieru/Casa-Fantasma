@@ -8,6 +8,7 @@ import { Debug } from './debug.js';
 import { Hud } from './hud.js';
 import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex } from './audio.js';
 import { initSfx, playRole } from './sfx.js';
+import { startHeartbeat } from './heartbeat.js';
 import { CONFIG } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience } from './ambience.js';
 
@@ -31,7 +32,8 @@ async function boot() {
 
   const game = new Game({ db, assets });
   const hud = new Hud(assets.sprites);
-  const newWorld = (seed, level) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze, level });
+  const newWorld = (seed, level) =>
+    generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze, ghost: CONFIG.ghost, level });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   const startLevel = (seed, level) => {
     game.setWorld(newWorld(seed, level));
@@ -41,6 +43,11 @@ async function boot() {
     wake();
   };
   game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
+  // Health 0 -> screamer -> start over from level 1 with a new maze and full health.
+  game.onDeath = () => {
+    game.health = 1;
+    startLevel((Math.random() * 2 ** 32) >>> 0, 1);
+  };
   game.onSfx = (role, delay) => playRole(role, delay);
   const debug = new Debug({
     game, renderer, playRandomAmbience,
@@ -48,6 +55,7 @@ async function boot() {
     nextLevel: () => game.onWorldEnd(),
   });
   game.onRoomChange = () => debug.refresh();
+  if (new URLSearchParams(location.search).has('debug')) window.casa = { game, renderer, assets, db }; // console access
   game.setWorld(newWorld(seedFromUrl(), levelFromUrl()));
   setLevelAmbience(game.world); // queued; starts on the start-overlay gesture
   console.info('[casa] level', game.world.level, 'seed', game.world.seed, game.world);
@@ -67,8 +75,16 @@ async function boot() {
     dirty = false;
     debug.tick(dt, draw);
     if (busy || debug.on) raf = requestAnimationFrame(loop);
-    else last = 0;
+    else {
+      last = 0;
+      // The loop sleeps when nothing moves; a random ghost must still be able to appear on time.
+      if (game.spawnAt !== null) {
+        clearTimeout(ghostTimer);
+        ghostTimer = setTimeout(wake, Math.max(0, game.spawnAt - performance.now()) + 5);
+      }
+    }
   };
+  let ghostTimer = 0;
   function wake() {
     dirty = true;
     if (!raf) raf = requestAnimationFrame(loop);
@@ -100,6 +116,7 @@ async function boot() {
     overlay.classList.add('hidden');
     unlockAudio();
     playRole('levelStart');
+    startHeartbeat(() => (game.phase === 'dead' || game.phase === 'end' ? null : game.health));
     startRandomAmbience();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
     game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking

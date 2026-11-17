@@ -45,6 +45,7 @@ src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf ca
 src/renderer.js     WebGL1: 2 programs (bg, item), 1 unit quad VBO, texture cache (WeakMap by source), letterbox view, context-loss restore
 src/shaders.js      GLSL. lightAt() = flashlight mask, evaluated per fragment in every draw (no fullscreen pass)
 src/game.js         state: room, inventory (keys/unlocked/searched), light, per-item hover/glow, transitions ('in'|'idle'|'out'|'end'), door/painting/back taps, hudState(), frame() -> draw list
+src/heartbeat.js    hidden-health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat
 src/sfx.js          sound roles: CONFIG.sfx prefix -> random pool from assets/audio/index.json, preload modes, playRole()
 src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font, typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change
 src/input.js        Pointer Events -> move/down/tap/leave in scene coords. Touch moves the light only while the finger is down
@@ -54,9 +55,10 @@ src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha
 src/debug.js        overlay (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot
 data/items.json     { id: { src, scale, depth, placement:[tags] } }   tags: "door" | "wall" (paintings)
 data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery"
+data/ghosts.json    { ghosts: { id: { src, scale } }, screamers: { id: { src } } }   ghosts load as sprites (same Map as items)
 data/surfaces.json  { walls: { id: { src, tile } }, floors: { id: { src, tile } } }   tile = scene px per repeat (floor: at the floor line)
 tools/serve.mjs     static dev server (--lan, --port=, --dir=). Without --dir, fs.watch re-runs audio.mjs/images.mjs on source changes (debounced)
-tools/images.mjs    art-src/** -> assets/**/*.webp via ffmpeg libwebp (incremental, orphan cleanup, never touches assets/audio/)
+tools/images.mjs    art-src/** -> assets/**/*.webp via ffmpeg libwebp (incremental, orphan cleanup, never touches assets/audio/). `LOSSLESS` names (ghost*) skip lossy: near-black detail dies otherwise
 tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (hand-written zip writer, deflate)
 ```
 
@@ -83,12 +85,20 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Each room also gets `wall`/`floor` (seeded, picked after its items); the wall always differs from the parent room's.
 - Seed 42, level 1: room 0 doors -> rooms 3, 1, 2; the master key is behind painting03 in room 2; the master door (door07) is in room 5 (0 -> 3 -> 5).
 - Headless check: import world.js + game.js in Node with stub sprites (full masks), tap item centres, step update(0.05). Game has no DOM deps.
+- `?debug` exposes `window.casa = { game, renderer, assets, db }` for console poking (e.g. `casa.game.die()`).
 - In an occluded/automated Chrome tab rAF runs ~2 fps and dt is capped at 0.05, so transitions take ~10x longer there.
+
+## Ghosts + health
+- Ghost rooms (`kind: 'ghost'`, from `ghost.roomChance[level]`) are made from leftover dead-end doors in world.js (>= 1 per level when the chance > 0 and a leftover exists): `items: []`, no surfaces (bg null = black), fixed `ghost: { id, x, y }`. `isExplored(ghost room)` = visited.
+- Random ghosts: `Game.enterRoom` schedules `spawnAt` (wall-clock ms, exponential with `randomPerMin[level]` + `graceS`; never in room 0 or ghost rooms). main.js sets a setTimeout to wake() the sleeping loop at spawnAt. Leaving a room with a random ghost stores it in `lingering` (room -> goneAt, `lingerS`); re-entering before goneAt re-summons it. Math.random, not seeded.
+- `summon()`: plays flashlight sfx; update(): `lamp` flickers then 0 (`exposure * lamp`), ghost alpha fades after `fadeDelayS` (plays ghostSpotted), `health -= drainPerS*dt`. While a ghost is present hover is suppressed except the back arrow (no door glow).
+- Ghost draw: FS_ITEM `uFx = [selfLit, opacity, gain, additive]`; additive output alpha 0, so the opaque black PNG background is invisible.
+- health <= 0: `die()` -> phase 'dead', screamer image as `frame.overlay` (pHud quad, flashing/jitter), screamer sfx; after `screamer.holdS` `onDeath` -> main restarts level 1 (new seed, health 1). Health persists across levels.
 
 ## Next likely work
 - Developer tools: slot editor (drag slots on the room, write rooms.json) and an event/trigger editor. Keep `world.js` and the data formats editor-friendly.
 - Per-room asset loading or preloading once the asset count grows (right now everything loads up front).
-- Ghosts (ghostSpotted sfx is registered but unused), a real ending.
+- A real ending; health feedback beyond sound if wanted (it is deliberately hidden).
 
 ## Verify
 `npm run dev`, then open `http://localhost:5173/?debug&seed=42` (see the seed 42 notes above).

@@ -1,10 +1,13 @@
-// Game state: maze position, inventory, flashlight, hover/glow, room transitions, HUD state.
+// Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, HUD state.
 // Produces a frame description for Renderer.
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const pickText = (arr) => arr[(Math.random() * arr.length) | 0];
+const between = ([a, b]) => a + Math.random() * (b - a);
+const perLevel = (arr, level) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
+const now = () => performance.now();
 
 const TEXT = {
   locked: ["It's locked.", 'The door is locked.', "It won't open."],
@@ -35,7 +38,7 @@ export class Game {
     this.hover = null; // item object | 'back' | null
     this.time = 0;
     this.exposure = 0;
-    this.phase = 'in'; // 'in' | 'idle' | 'out' | 'end'
+    this.phase = 'in'; // 'in' | 'idle' | 'out' | 'end' (level card) | 'dead' (screamer)
     this.phaseT = 0;
     this.next = null;  // room index to enter after 'out', or EXIT
     this.world = null;
@@ -45,7 +48,14 @@ export class Game {
     this.onRoomChange = null; // (game) => void
     this.onWorldEnd = null;   // (game) => void   called after the "Level N" card: start the next level
     this.onSfx = null;        // (role, delay?) => void   role = key of CONFIG.sfx
+    this.onDeath = null;      // (game) => void   called after the screamer: restart
     this.lastPointer = null;
+    // Ghosts. health is hidden (only heard through the heartbeat) and carries over between levels.
+    this.health = 1;
+    this.ghost = null;    // ghost in the current room: { id, sprite, s, x, y, random, t, alpha, cued }
+    this.lamp = 1;        // flashlight: 1 on, 0 off (a ghost kills it). Multiplies exposure.
+    this.spawnAt = null;  // performance.now() ms when a random ghost appears in this room, or null
+    this.screamer = null; // image shown while dead
   }
 
   setWorld(world) {
@@ -54,14 +64,23 @@ export class Game {
     this.keys = [];
     this.unlocked = new Set();
     this.searched = new Set();
+    this.visited = new Set();
+    this.lingering = new Map(); // room -> { id, x, y, goneAt }: random ghosts you escaped, still there for a while
+    this.ghost = null;
     this.msg = null;
     this.enterRoom(0);
   }
 
   enterRoom(i) {
+    // Escaping a random ghost: it stays behind in that room for a random while.
+    if (this.ghost?.random && this.roomIndex !== i) {
+      const { id, x, y } = this.ghost;
+      this.lingering.set(this.roomIndex, { id, x, y, goneAt: now() + between(CONFIG.ghost.lingerS) * 1000 });
+    }
     this.roomIndex = i;
+    this.visited.add(i);
     const spec = this.world.rooms[i];
-    const template = this.db.rooms[spec.template];
+    const template = this.db.rooms[spec.template] ?? { slots: [] };
     const floorY = floorLineY();
     const items = spec.items.map((e, idx) => {
       const slot = template.slots.find((s) => s.id === e.slot);
@@ -87,19 +106,63 @@ export class Game {
       wall: this.assets.surfaces.get(spec.wall), wallTile: sf.walls[spec.wall]?.tile ?? 512,
       floor: this.assets.surfaces.get(spec.floor), floorTile: sf.floors[spec.floor]?.tile ?? 512,
     };
-    this.room = { spec, template, bg, items };
+    this.room = { spec, template, bg: spec.kind === 'ghost' ? null : bg, items };
     this.markExplored();
     this.hover = null;
     this.phase = 'in';
     this.phaseT = 0;
     this.exposure = 0;
+
+    // Ghost rooms always hold their ghost; other rooms may still hold a random ghost you escaped from.
+    this.ghost = null;
+    this.lamp = 1;
+    const linger = this.lingering.get(i);
+    if (linger && linger.goneAt <= now()) this.lingering.delete(i);
+    if (spec.kind === 'ghost') this.summon(spec.ghost, false);
+    else if (linger && linger.goneAt > now()) this.summon(linger, true);
+    // Random ghost: exponential waiting time, so it can come at any moment (from level ghost.randomPerMin > 0).
+    const perMin = perLevel(CONFIG.ghost.randomPerMin, this.world.level ?? 1);
+    this.spawnAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' && perMin > 0
+      ? now() + (CONFIG.ghost.graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000
+      : null;
     this.onRoomChange?.(this);
+  }
+
+  // A ghost appears in the current room: the flashlight dies, then the ghost fades in (see update()).
+  summon({ id, x, y }, random) {
+    const def = this.db.ghosts.ghosts[id];
+    this.ghost = { id, x, y, random, sprite: this.assets.sprites.get(id), s: def?.scale ?? 3, t: 0, alpha: 0, cued: false };
+    this.spawnAt = null;
+    if (this.hover !== 'back') this.hover = null;
+    this.onSfx?.('flashlight');
+    this.onRoomChange?.(this);
+  }
+
+  // Random ghost now (also the debug G key). Not in the first room of a level.
+  spawnRandomGhost() {
+    if (this.ghost || this.roomIndex === 0 || this.phase === 'dead') return;
+    const ids = Object.keys(this.db.ghosts.ghosts);
+    this.summon({ id: ids[(Math.random() * ids.length) | 0], x: 360 + Math.random() * 1200, y: 380 + Math.random() * 240 }, true);
+  }
+
+  die() {
+    this.health = 0;
+    this.phase = 'dead';
+    this.phaseT = 0;
+    this.ghost = null;
+    this.spawnAt = null;
+    this.msg = null;
+    this.hover = null;
+    const imgs = [...this.assets.screamers.values()];
+    this.screamer = imgs[(Math.random() * imgs.length) | 0] ?? null;
+    this.onSfx?.('screamer');
   }
 
   // True when nothing is left to find in room r and everything behind it: every painting searched, and every
   // door opened and leading to an explored room. A locked door not yet opened, or the master door, counts as
   // something left. The rooms form a tree, so this terminates; levels are small, so no caching is needed.
   isExplored(r) {
+    if (this.world.rooms[r].kind === 'ghost') return this.visited.has(r); // nothing to find, once you know
     return this.world.rooms[r].items.every((e, idx) => {
       const uid = `${r}:${idx}`;
       if (e.to === undefined) return this.searched.has(uid);
@@ -134,7 +197,9 @@ export class Game {
     this.light.tx = p.x;
     this.light.ty = p.y;
     this.lastPointer = { p, kind };
-    this.hover = this.phase === 'idle' ? this.hit(p, kind) : null;
+    const h = this.phase === 'idle' ? this.hit(p, kind) : null;
+    // With a ghost in the room nothing glows: you have to remember where the doors were.
+    this.hover = this.ghost && h !== 'back' ? null : h;
   }
 
   pointerDown(p, kind) {
@@ -149,6 +214,7 @@ export class Game {
   tap(p, kind) {
     this.pointerMove(p, kind);
     if (this.phase === 'end') return void this.onWorldEnd?.(this);
+    if (this.phase === 'dead') return;
     if (this.phase !== 'idle') return;
     const h = this.hit(p, kind);
     if (!h) return;
@@ -256,6 +322,33 @@ export class Game {
       this.phaseT += dt;
       if (this.phaseT >= tr.winHoldS) this.onWorldEnd?.(this);
       busy = true;
+    } else if (this.phase === 'dead') {
+      this.phaseT += dt;
+      if (this.phaseT >= CONFIG.screamer.holdS) this.onDeath?.(this);
+      return true;
+    }
+
+    // Ghosts: random appearance, flashlight dying, fade-in, health drain.
+    const gc = CONFIG.ghost;
+    if (!this.ghost && this.spawnAt !== null && this.phase === 'idle' && now() >= this.spawnAt) this.spawnRandomGhost();
+    if (this.ghost && this.phase !== 'end') {
+      const G = this.ghost;
+      G.t += dt;
+      this.lamp = G.t < gc.lampOffS ? (Math.sin(G.t * 97) + Math.sin(G.t * 41) > 0 ? 1 : 0.12) : 0;
+      G.alpha = Math.min(1, Math.max(0, (G.t - gc.fadeDelayS) / gc.fadeInS));
+      if (!G.cued && G.t >= gc.fadeDelayS) {
+        G.cued = true;
+        this.onSfx?.('ghostSpotted');
+      }
+      this.health -= gc.drainPerS * dt;
+      if (this.health <= 0) {
+        this.die();
+        return true;
+      }
+      busy = true;
+    } else if (gc.regenPerS > 0 && this.health < 1 && this.phase !== 'end') {
+      this.health = Math.min(1, this.health + gc.regenPerS * dt);
+      busy = true;
     }
 
     const g = CONFIG.glow;
@@ -285,8 +378,8 @@ export class Game {
     return {
       message: m?.text ?? null,
       chars: m ? Math.min(m.text.length, Math.floor(m.t * CONFIG.hud.textCps)) : 0,
-      keys: this.keys.map((k) => ({ door: this.world.keys[k].door, master: k === 0 })),
-      back: this.phase !== 'end' && this.room.spec.parent >= 0,
+      keys: this.phase === 'dead' ? [] : this.keys.map((k) => ({ door: this.world.keys[k].door, master: k === 0 })),
+      back: this.phase !== 'end' && this.phase !== 'dead' && this.room.spec.parent >= 0,
       backHover: this.hover === 'back',
       title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
     };
@@ -294,6 +387,21 @@ export class Game {
 
   frame() {
     const L = this.light, f = CONFIG.flashlight, sh = CONFIG.shadow, g = CONFIG.glow;
+    if (this.phase === 'dead') {
+      // Screamer: flashing on/off, jittering and pulsing in size.
+      const t = this.phaseT, sc = CONFIG.screamer;
+      const on = (t * sc.flashHz) % 1 < 0.7 || t > sc.holdS * 0.6;
+      const size = CONFIG.sceneH * (1.05 + 0.12 * Math.abs(Math.sin(t * 23)));
+      const jx = Math.sin(t * 71) * 25, jy = Math.cos(t * 53) * 18;
+      return {
+        light: { x: L.x, y: L.y, r: f.radius, exposure: 0 },
+        bg: null,
+        items: [],
+        overlay: this.screamer && on
+          ? { img: this.screamer, rect: [(CONFIG.sceneW - size) / 2 + jx, (CONFIG.sceneH - size) / 2 + jy, size, size] }
+          : null,
+      };
+    }
     const srcX = L.x + f.handOffset[0], srcY = L.y + f.handOffset[1];
     const items = this.phase === 'end' ? [] : this.room.items.map((it) => {
       let dx = (it.cx - srcX) * it.depth * sh.perDepth;
@@ -314,8 +422,20 @@ export class Game {
         clip: it.clip,
       };
     });
+    const G = this.ghost;
+    if (G && G.alpha > 0 && this.phase !== 'end') {
+      // Self-lit and additive: the art's black background adds nothing, only the face shows.
+      const sp = G.sprite, s = G.s, d = CONFIG.ghost.drift;
+      const cx = G.x + Math.sin(this.time * 0.7) * d, cy = G.y + Math.sin(this.time * 1.1) * d * 0.6;
+      items.push({
+        sprite: sp,
+        rect: [cx - (sp.w * s) / 2 - sp.ox * s, cy - (sp.h * s) / 2 - sp.oy * s, sp.tw * s, sp.th * s],
+        shadow: [0, 0, 0, 0], glow: [0, 0, 0, 0], glowP: [0, 0], clip: 2,
+        fx: [1, G.alpha * (0.85 + 0.15 * Math.sin(this.time * 9)), CONFIG.ghost.gain, 1],
+      });
+    }
     return {
-      light: { x: L.x, y: L.y, r: f.radius, exposure: this.exposure },
+      light: { x: L.x, y: L.y, r: f.radius, exposure: this.exposure * this.lamp },
       bg: this.phase === 'end' ? null : this.room.bg,
       items,
     };

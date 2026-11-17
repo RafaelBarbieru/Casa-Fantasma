@@ -49,7 +49,7 @@ export async function loadAudioIndex() {
 }
 export const audioNamesWithPrefix = (prefix) => index.filter((n) => n.startsWith(prefix));
 
-// delay: seconds from now (sample-accurate, so stacked sounds don't mask each other).
+// delay: seconds from now (sample-accurate, so stacked sounds don't mask each other). Returns the duration (s).
 export function playSfx(name, volume = 1, delay = 0) {
   const buf = buffers.get(name);
   if (!ctx || !buf) return;
@@ -64,6 +64,7 @@ export function playSfx(name, volume = 1, delay = 0) {
   }
   node.connect(ctx.destination);
   src.start(delay > 0 ? ctx.currentTime + delay : 0);
+  return buf.duration;
 }
 
 // --- Looping bed (level ambience): ONE reused <audio> element, streamed (not decoded), routed through a

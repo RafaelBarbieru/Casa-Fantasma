@@ -3,7 +3,8 @@
 // world = {
 //   seed, level, ambience,
 //   rooms: [{                         rooms[0] is the start. The rooms form a tree: every room but the
-//     kind: 'doors' | 'paintings',    start has exactly one way in (its parent), which is where "back" goes.
+//     kind: 'doors' | 'paintings' | 'ghost',  start has exactly one way in (its parent), which is where "back" goes.
+//     ghost?: { id, x, y },           ghost rooms only: black room, always this ghost (data/ghosts.json id)
 //     parent: index | -1,
 //     stage: n,                       0 = reachable without keys, n = behind locked side door n (debug/editor info)
 //     template: roomId,               data/rooms.json layout (slots)
@@ -22,7 +23,7 @@
 //   3. From level 2 on, locked side doors (maze.sideLocks) on other unused doors, each with a small region behind.
 //      Their keys are hidden in the open region. The master key is either in the open region or (masterBehindChance)
 //      behind one of the side doors; the other side regions are red herrings.
-//   4. Every door left over leads to a decoy painting room.
+//   4. Every door left over leads to a decoy painting room or, from level 2 (ghost.roomChance), a ghost room.
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -31,7 +32,7 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
-export function generateWorld(seed, db, { ambience = [], maze = {}, level = 1 } = {}) {
+export function generateWorld(seed, db, { ambience = [], maze = {}, ghost = {}, level = 1 } = {}) {
   const rng = createRng(seed);
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
@@ -54,7 +55,7 @@ export function generateWorld(seed, db, { ambience = [], maze = {}, level = 1 } 
         r.doors.push({ to: null, lock: null });
         open.push({ room: id, door: i });
       }
-    } else {
+    } else if (kind === 'paintings') {
       const n = range(m.paintings);
       for (let i = 0; i < n; i++) r.paintings.push({ key: null });
     }
@@ -122,10 +123,20 @@ export function generateWorld(seed, db, { ambience = [], maze = {}, level = 1 } 
   for (let k = 1; k <= sideLocks; k++) hide(k, 0);
   hide(0, masterBehind ? vault : 0);
 
-  // Leftover doors -> decoy painting rooms.
-  for (const o of open.slice()) {
+  // Leftover doors -> decoy painting rooms, or (from level 2) ghost-only rooms. They are dead ends, so they never
+  // block the way. A level whose chance is > 0 gets at least one ghost room when it has a leftover door.
+  const ghostIds = Object.keys(db.ghosts?.ghosts ?? {});
+  const perLevel = (arr) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
+  const ghostChance = ghostIds.length ? perLevel(ghost.roomChance) : 0;
+  const leftovers = open.slice();
+  const haunted = new Set();
+  if (ghostChance > 0) {
+    for (const o of leftovers) if (rng.next() < ghostChance) haunted.add(o);
+    if (!haunted.size && leftovers.length) haunted.add(rng.pick(leftovers));
+  }
+  for (const o of leftovers) {
     take(o);
-    link(o, 'paintings', rooms[o.room].stage);
+    link(o, haunted.has(o) ? 'ghost' : 'paintings', rooms[o.room].stage);
   }
 
   // --- 2. dress: pick templates, slots and art
@@ -140,6 +151,12 @@ export function generateWorld(seed, db, { ambience = [], maze = {}, level = 1 } 
   const walls = Object.keys(db.surfaces?.walls ?? {}), floors = Object.keys(db.surfaces?.floors ?? {});
   const out = [];
   for (const r of rooms) {
+    if (r.kind === 'ghost') {
+      // Pitch black, nothing but the same ghost every time. x, y = ghost centre (scene px).
+      const g = { id: rng.pick(ghostIds), x: 360 + rng.int(1200), y: 380 + rng.int(240) };
+      out.push({ kind: 'ghost', parent: r.parent, stage: r.stage, template: null, wall: null, floor: null, items: [], ghost: g });
+      continue;
+    }
     const tag = r.kind === 'doors' ? 'door' : 'wall';
     const need = r.kind === 'doors' ? r.doors.length : r.paintings.length;
     const templates = Object.keys(db.rooms).filter((id) => db.rooms[id].slots.filter((s) => fits(s, tag)).length >= need);

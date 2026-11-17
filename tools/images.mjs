@@ -15,6 +15,8 @@ const SRC = path.join(ROOT, 'art-src');
 const OUT = path.join(ROOT, 'assets');
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
 const QUALITY = 90; // libwebp lossy 0-100. Pre-rendered art: 90 is visually clean and ~8x smaller than PNG.
+// Names encoded lossless instead: near-black art (ghosts) loses its faint detail to lossy WebP.
+const LOSSLESS = [/^ghost/];
 const force = process.argv.includes('--force');
 
 const walk = (dir, rel = '') =>
@@ -86,8 +88,9 @@ async function convert({ rel, src, out, copy }) {
   // RGBA input reaches libwebp as bgra, so alpha survives (fully opaque images drop it, which is fine).
   // Write to a temp name first so a failed encode never leaves a half-written file the game could load.
   const tmp = out + '.tmp.webp';
+  const lossless = LOSSLESS.some((re) => re.test(path.basename(rel)));
   await run(['-y', '-v', 'error', '-i', src, '-frames:v', '1', '-map_metadata', '-1',
-    '-c:v', 'libwebp', '-lossless', '0', '-quality', String(QUALITY), '-compression_level', '6', tmp]);
+    '-c:v', 'libwebp', '-lossless', lossless ? '1' : '0', '-quality', lossless ? '100' : String(QUALITY), '-compression_level', '6', tmp]);
   fs.renameSync(tmp, out);
   const kb = (f) => (fs.statSync(f).size / 1024).toFixed(1);
   console.log(`✓ art-src/${rel}  ${kb(src)} KB -> ${kb(out)} KB`);

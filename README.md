@@ -20,6 +20,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - `?debug`: shows the debug panel (seed, room, item, slot positions). You can also press the **`** key at any time.
   - The panel lists what's in the current room (where each door leads, which are locked, which painting hides a key) and where every key is.
   - With the panel open: **N** generates a new random level, **K** gives you every key, **B** jumps back to the first room.
+  - Ghost testing: **G** makes a ghost appear in the current room, **D** takes away 20% health, **H** restores full health. The panel shows your hidden health.
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
 
@@ -36,6 +37,35 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 
   A door with a locked door anywhere behind it that you haven't opened stays warm. So does the master door.
 - Levels are always solvable.
+
+### Ghosts
+- **Level 1** has no ghosts.
+- **From level 2**, some dead-end doors lead to a **ghost room**: pitch black, with nothing but a ghost.
+  - When you walk in, the flashlight flickers and dies, and the ghost fades in.
+  - A ghost room always has the same ghost in the same place, so remember which door it was and avoid it.
+- **From level 3**, a ghost can appear in any room except the first room of the level, at any moment.
+  - The flashlight dies and nothing glows any more, so you have to remember where the doors were and get out: back, or through another door.
+  - The ghost stays in that room for 1 to 10 seconds after you escape, so going straight back means meeting it again.
+- The higher the level, the more ghost rooms and random ghosts there are.
+- **Health is hidden.** Ghosts drain it every second you share a room with them (about 8 seconds from full to dead). You only *hear* it:
+  - after losing 5%, a slow heartbeat starts, about one beat a second;
+  - it speeds up as health falls, switches to a fast heartbeat below 50%, and keeps getting faster towards 0.
+- Health does not come back on its own (see `regenPerS`) and carries over between levels.
+- At 0% a screamer flashes on screen with a scream, and the game starts over from level 1.
+
+`src/config.js`:
+- `ghost`:
+  - `roomChance`: per level, how likely a dead-end door leads to a ghost room.
+  - `randomPerMin`: per level, how many random ghosts per minute spent in a room.
+  - `graceS`: no random ghost in the first seconds after entering a room.
+  - `lingerS`: how long an escaped ghost stays.
+  - `drainPerS`: how fast health drains with a ghost in the room.
+  - `regenPerS`: health regained per second away from ghosts (0 = never).
+  - `lampOffS`, `fadeDelayS`, `fadeInS`: timings for the flashlight dying and the ghost fading in.
+  - `gain`: how bright the ghosts are.
+  - `drift`: how much they float.
+- `heartbeat`: when it starts, when it switches to fast, and the gaps between beats.
+- `screamer`: how long it lasts and how fast it flashes.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
 
 ### The maze settings
@@ -83,6 +113,18 @@ To add a texture:
 - `horizonY`: the eye level. A lower number makes the floor look steeper.
 - `seam`: how dark the corner where the wall meets the floor is.
 - `wallMargin`: the minimum gap between a painting and the floor.
+
+### Ghosts and screamers
+- Ghost images go in `art-src/` as `ghostNN.png` (any background; black is fine, the game makes it invisible). Screamers go in as `screamerNN.png/jpg`.
+- Register them in `data/ghosts.json`:
+
+```json
+{
+  "ghosts":    { "ghost01": { "src": "assets/ghost01.webp", "scale": 3 } },
+  "screamers": { "screamer01": { "src": "assets/screamer01.webp" } }
+}
+```
+`scale` is the ghost's on-screen size. Ghost images are converted without any quality loss, because their faint dark details would otherwise disappear.
 
 ### Where things go (layouts)
 `data/rooms.json` has one layout per kind of room, with the **slots** where items can go:
@@ -142,7 +184,11 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/item` | you pick up an item (a key), just after the painting sound |
   | `sfx/level_end` | you open the master door |
   | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
-  | `sfx/ghost_spotted` | registered, but not used yet (no ghosts) |
+  | `sfx/ghost_spotted` | a ghost fades in |
+  | `sfx/flashligh` | the flashlight dies when a ghost appears (also matches `flashlight…`) |
+  | `sfx/heartbeat_slow` | heartbeat, health below 95% |
+  | `sfx/heartbeat_fast` | heartbeat, health below 50% |
+  | `sfx/screamer` | health reached 0 |
 
   Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.
 - **Level ambience** is set in `src/config.js` under `ambience`:
