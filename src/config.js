@@ -46,4 +46,8 @@ export const CONFIG = {
     outS: 0.35,
     inS: 0.7,
   },
+  // Sound effects: name -> path under assets/audio (no extension). All are decoded at boot.
+  sfx: {
+    itemClick: 'sfx/keypress_01',
+  },
 };

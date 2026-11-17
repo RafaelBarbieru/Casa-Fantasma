@@ -27,6 +27,7 @@ export class Game {
     this.room = null; // { spec, template, bg, item }
     this.onRoomChange = null; // (game) => void
     this.onWorldEnd = null;   // (game) => void   called after the last room's item is taken
+    this.onItemClick = null;  // (game) => void   item clicked/tapped (sfx hook)
     this.lastPointer = null;
   }
 
@@ -84,6 +85,7 @@ export class Game {
     this.pointerMove(p, kind);
     if (this.phase !== 'idle' || !this.hit(p, kind)) return;
     // TODO: hook item interaction / inventory here.
+    this.onItemClick?.(this);
     this.phase = 'out';
     this.phaseT = 0;
     this.hover = false;

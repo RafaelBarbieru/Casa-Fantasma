@@ -5,6 +5,8 @@ import { generateWorld, seedFromUrl } from './world.js';
 import { attachInput } from './input.js';
 import { Game } from './game.js';
 import { Debug } from './debug.js';
+import { loadSfx, unlockAudio, playSfx } from './audio.js';
+import { CONFIG } from './config.js';
 
 const canvas = document.getElementById('c');
 const overlay = document.getElementById('overlay');
@@ -18,7 +20,10 @@ async function boot() {
   }
 
   const db = await loadDB();
-  const assets = await loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`));
+  const [assets] = await Promise.all([
+    loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
+    loadSfx(Object.values(CONFIG.sfx)),
+  ]);
 
   const game = new Game({ db, assets });
   const regenerate = (seed) => {
@@ -26,6 +31,7 @@ async function boot() {
     wake();
   };
   game.onWorldEnd = () => regenerate();
+  game.onItemClick = () => playSfx(CONFIG.sfx.itemClick);
   const debug = new Debug({ game, renderer, regenerate: () => regenerate((Math.random() * 2 ** 32) >>> 0) });
   game.onRoomChange = () => debug.refresh();
   game.setWorld(generateWorld(seedFromUrl(), db));
@@ -74,6 +80,7 @@ async function boot() {
   overlay.classList.add('ready');
   overlay.addEventListener('pointerdown', () => {
     overlay.classList.add('hidden');
+    unlockAudio();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
     game.enterRoom(0); // restart flicker-in now that the player is looking
     wake();

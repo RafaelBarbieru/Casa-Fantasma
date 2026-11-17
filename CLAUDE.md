@@ -28,8 +28,8 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 - `tools/audio.mjs` (runs from the predev, predev:lan and prebuild hooks) uses ffmpeg to write `assets/audio/**/<name>.ogg` (Opus) and `<name>.m4a` (AAC).
   - It is incremental (by mtime), deletes orphaned outputs, and preserves the channel count (mono or stereo, >2 downmixed).
   - Bitrates are in `RATES`: Opus 64k mono / 112k stereo, AAC 96k / 160k. Sample rate is 48 kHz.
-- `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred). It is not wired into gameplay yet.
-  - Plan: short SFX go through `decodeAudioData` into AudioBuffers.
+- `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred).
+  - SFX: `CONFIG.sfx` maps role -> name; `loadSfx` decodes them into AudioBuffers at boot, `unlockAudio()` runs on the start overlay gesture, `playSfx(name)` plays. `game.onItemClick` plays `sfx.itemClick` (keypress_01).
   - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
   - Decode during loading or room transitions, not mid-interaction.
 

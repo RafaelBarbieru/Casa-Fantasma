@@ -83,6 +83,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
 
   Each player downloads only the one their device needs. To convert by hand, run `npm run audio`; to redo everything, run `npm run audio:force`.
 - The converted files are not saved in git, only your WAVs (via LFS). This needs **ffmpeg** installed, which you already have.
+- Which sound plays for what is set in `src/config.js` under `sfx`. For example, `itemClick: 'sfx/keypress_01'` plays when you click an item. Write the path inside `audio-src/` without `.wav`.
 - Loops: cut at a silent or zero-crossing point so they don't click when they repeat, and keep loudness roughly even across files.
 
 ## Tweaking the look
