@@ -32,7 +32,7 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
-export function generateWorld(seed, db, { ambience = [], maze = {}, ghost = {}, level = 1 } = {}) {
+export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, level = 1 } = {}) {
   const rng = createRng(seed);
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
@@ -200,7 +200,8 @@ export function generateWorld(seed, db, { ambience = [], maze = {}, ghost = {}, 
   });
 
   // Picked last so adding/removing loops never changes a seed's layout.
-  return { seed: seed >>> 0, level, ambience: ambience.length ? rng.pick(ambience) : null, rooms: out, keys };
+  const loops = ambience.length > 1 ? ambience.filter((a) => a !== avoidAmbience) : ambience;
+  return { seed: seed >>> 0, level, ambience: loops.length ? rng.pick(loops) : null, rooms: out, keys };
 }
 
 // ?level=N starts at level N (for testing).

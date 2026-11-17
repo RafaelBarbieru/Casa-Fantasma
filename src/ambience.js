@@ -2,10 +2,14 @@
 // one-shot sounds from CONFIG.ambience.random.pool at random intervals. One-shots use Math.random
 // (not the world seed) on purpose: they should not repeat identically for the same seed.
 import { CONFIG } from './config.js';
-import { playLoop, playSfx, audioUnlocked } from './audio.js';
+import { playLoop, playSfx, audioUnlocked, audioNamesWithPrefix } from './audio.js';
 
 let timer = 0;
 let lastShot = null;
+
+// The CONFIG prefixes resolved against assets/audio/index.json (call after loadAudioIndex()).
+export const ambienceLoops = () => audioNamesWithPrefix(CONFIG.ambience.loops);
+export const ambiencePool = () => audioNamesWithPrefix(CONFIG.ambience.random.pool);
 
 const between = ([a, b]) => a + Math.random() * (b - a);
 
@@ -28,7 +32,7 @@ function schedule(range) {
 // Plays one random one-shot now. Exported for the debug overlay.
 export function playRandomAmbience() {
   const r = CONFIG.ambience.random;
-  const pool = r.pool;
+  const pool = ambiencePool();
   if (!pool.length) return null;
   // Avoid the same sound twice in a row when there is a choice.
   const options = pool.length > 1 ? pool.filter((n) => n !== lastShot) : pool;

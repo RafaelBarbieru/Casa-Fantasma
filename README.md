@@ -185,17 +185,18 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/level_end` | you open the master door |
   | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
   | `sfx/ghost_spotted` | a ghost fades in |
-  | `sfx/flashligh` | the flashlight dies when a ghost appears (also matches `flashlight…`) |
+  | `sfx/flashlight` | the flashlight dies when a ghost appears
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
   | `sfx/heartbeat_fast` | heartbeat, health below 50% |
   | `sfx/screamer` | health reached 0 |
 
   Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.
 - **Level ambience** is set in `src/config.js` under `ambience`:
-  - `loops`: the background loops. Each level picks one of them at random and plays it on repeat. Add more names to the list to get more variety.
+  - It works by name, like the game sounds: drop files into `audio-src/ambience/` and they're picked up, no config change needed.
+  - `loops: 'ambience/level'`: every `levelNN` file is a background loop. Each level picks one at random and plays it on repeat, never the same one as the previous level.
   - `loopVolume`, `fadeInS`, `fadeOutS`: how loud the loop is and how many seconds it takes to fade in and out.
-  - `random`: occasional extra sounds over the loop (whispers, distant monster...).
-    - `pool`: which sounds can play.
+  - `random`: occasional extra sounds over the loop that play with no event behind them.
+    - `pool: 'ambience/random'`: every `randomNN` file can play.
     - `gapS: [25, 60]`: wait between 25 and 60 seconds between attempts.
     - `firstDelayS`: the wait before the first one.
     - `chance`: how likely each attempt is to actually play (1 = always).

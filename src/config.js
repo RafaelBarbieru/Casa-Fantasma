@@ -113,7 +113,7 @@ export const CONFIG = {
     item: { files: 'sfx/item' },                // picking up an item (a key)
     levelEnd: { files: 'sfx/level_end' },       // the master door opens
     levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins
-    flashlight: { files: 'sfx/flashligh' },     // the flashlight dies when a ghost appears (matches flashligh01 too)
+    flashlight: { files: 'sfx/flashlight' },     // the flashlight dies when a ghost appears
     ghostSpotted: { files: 'sfx/ghost_spotted', preload: 'one' }, // the ghost fades in
     heartbeatSlow: { files: 'sfx/heartbeat_slow' },
     heartbeatFast: { files: 'sfx/heartbeat_fast' },
@@ -152,17 +152,18 @@ export const CONFIG = {
     flashHz: 12,
   },
 
-  // Level ambience. Names are paths under audio-src without .wav (same as sfx).
+  // Level ambience. Like sfx, every sound whose name (path in audio-src/, no extension) starts with the prefix is used.
   ambience: {
-    // Each level gets ONE of these as its looping background, picked at random (from the world seed).
-    loops: ['ambience/unease01'],
+    // Each level gets ONE of these as its looping background, picked at random (from the world seed),
+    // never the same one as the previous level (when there are at least two).
+    loops: 'ambience/level',
     loopVolume: 0.7,
     fadeInS: 4,         // fade in when the level starts
     fadeOutS: 2,        // fade out of the old loop when a new level picks a different one
 
-    // Random one-shot sounds played over the loop.
+    // Random one-shot sounds played over the loop, with no event behind them.
     random: {
-      pool: ['ambience/monster_distant01', 'ambience/whisper01_left', 'ambience/whisper01_right'],
+      pool: 'ambience/random',
       firstDelayS: [20, 40], // [min, max] seconds before the first one after entering the game
       gapS: [25, 60],        // [min, max] seconds between attempts
       chance: 0.8,           // 0..1 probability that an attempt actually plays (adds irregularity)

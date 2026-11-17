@@ -10,7 +10,7 @@ import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex } from './audio.js'
 import { initSfx, playRole } from './sfx.js';
 import { startHeartbeat } from './heartbeat.js';
 import { CONFIG } from './config.js';
-import { setLevelAmbience, startRandomAmbience, playRandomAmbience } from './ambience.js';
+import { setLevelAmbience, startRandomAmbience, playRandomAmbience, ambienceLoops, ambiencePool } from './ambience.js';
 
 const canvas = document.getElementById('c');
 const overlay = document.getElementById('overlay');
@@ -27,16 +27,18 @@ async function boot() {
   const [assets] = await Promise.all([
     loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
     initSfx(),
-    loadSfx(CONFIG.ambience.random.pool),
+    loadSfx(ambiencePool()),
   ]);
 
   const game = new Game({ db, assets });
   const hud = new Hud(assets.sprites);
-  const newWorld = (seed, level) =>
-    generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze, ghost: CONFIG.ghost, level });
+  // avoidAmbience: the previous level's loop, so two levels in a row never share one.
+  const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
+    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, level,
+  });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   const startLevel = (seed, level) => {
-    game.setWorld(newWorld(seed, level));
+    game.setWorld(newWorld(seed, level, game.world?.ambience));
     setLevelAmbience(game.world);
     if (audioUnlocked()) playRole('levelStart'); // the first level's sound plays on the start-overlay tap
     console.info('[casa] level', level, 'seed', game.world.seed, game.world);
