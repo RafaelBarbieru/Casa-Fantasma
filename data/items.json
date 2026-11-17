@@ -1,0 +1,5 @@
+{
+  "painting01": { "src": "assets/items/painting01.webp", "scale": 1.4, "depth": 8, "placement": ["wall"] },
+  "painting02": { "src": "assets/items/painting02.webp", "scale": 1.4, "depth": 8, "placement": ["wall"] },
+  "painting03": { "src": "assets/items/painting03.webp", "scale": 1.4, "depth": 8, "placement": ["wall"] }
+}

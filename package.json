@@ -1,0 +1,13 @@
+{
+  "name": "casa-fantasma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Point-and-click pre-rendered horror game. Vanilla JS + raw WebGL, no engine, no dependencies.",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "dev:lan": "node tools/serve.mjs --lan",
+    "build": "node tools/build.mjs",
+    "preview": "node tools/serve.mjs --dir=dist/web"
+  }
+}
