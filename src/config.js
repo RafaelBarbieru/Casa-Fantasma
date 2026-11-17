@@ -15,8 +15,26 @@ export const CONFIG = {
     wallMargin: 30,     // wall items (paintings) keep at least this many px above the floor line
   },
 
-  // When a key is found, the item sound plays this long after the painting sound.
-  itemSfxDelayS: 0.35,
+  // Paintings (src/game.js). Tapping one makes it slip off a nail and swing, uncovering the wall behind it; a key or
+  // pill hidden there then has to be tapped to take it. Some paintings fall to the floor and crack instead (sfx fall).
+  paintings: {
+    tiltDeg: [18, 30],  // how far a slipping painting swings (random in range, random side). It hangs from the nail
+                        // on the other side, and the free side drops: the item behind is on that side.
+    minDrop: 25,        // it also slides down at least this many scene px (more when needed to uncover the item)
+    lootMargin: 14,     // gap kept between the uncovered item and the slipped painting, scene px
+    lootTop: 18,        // the hidden item sits this far below the painting's top edge, scene px
+    tiltS: 0.9,         // slip + swing animation
+    fallChance: 0.05,    // chance a painting falls to the floor and cracks instead (also when it can't slip far enough)
+    fallDeg: [3, 10],   // tilt of a fallen painting
+    fallS: 0.3,         // fall time (it accelerates)
+    bounceS: 0.22,      // small bounce after hitting the floor...
+    bounce: 16,         // ...this high, scene px
+    floorSink: 28,      // its lowest corner rests this far below the floor line (in front of the wall)
+    fallSfxDelayS: 0,   // delay of the fall sound after the tap (fallS = exactly at impact)
+    crackPx: 5,         // crack line width, scene px (one PS1 pixel is 4)
+    crackDarken: 0.85,  // 0..1 how dark the cracks are
+    fallenGain: 0.8,    // a fallen painting is a bit darker
+  },
 
   // Duration (s) of the shake when a locked door is tried.
   lockedShakeS: 0.35,
@@ -110,8 +128,9 @@ export const CONFIG = {
   sfx: {
     door: { files: 'sfx/door' },                // opening a door (also going back)
     locked: { files: 'sfx/locked' },            // trying a locked door without its key
-    painting: { files: 'sfx/painting' },        // looking behind a painting
-    item: { files: 'sfx/item' },                // picking up an item (a key)
+    painting: { files: 'sfx/painting' },        // a painting slips
+    fall: { files: 'sfx/fall' },                // a painting falls to the floor and cracks
+    item: { files: 'sfx/item' },                // picking up a key or pills
     levelEnd: { files: 'sfx/level_end' },       // the master door opens
     levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins
     flashlight: { files: 'sfx/flashlight' },     // the flashlight dies when a ghost appears

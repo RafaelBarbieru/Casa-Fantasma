@@ -42,8 +42,17 @@ export function makeSprite(img) {
   ctx.drawImage(img, ox, oy);
   const px = ctx.getImageData(ox, oy, w, h).data;
   const mask = new Uint8Array(w * h);
-  for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] >= CONFIG.hitAlpha ? 1 : 0;
-  return { canvas, w, h, tw, th, ox, oy, mask };
+  // box = tight bounds of the visible pixels [x0, y0, x1, y1) in native px (art often has a transparent margin).
+  const box = [w, h, 0, 0];
+  for (let i = 0; i < mask.length; i++) {
+    if (px[i * 4 + 3] < CONFIG.hitAlpha) continue;
+    mask[i] = 1;
+    const x = i % w, y = (i / w) | 0;
+    box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y);
+    box[2] = Math.max(box[2], x + 1); box[3] = Math.max(box[3], y + 1);
+  }
+  if (box[2] <= box[0]) box.splice(0, 4, 0, 0, w, h);
+  return { canvas, w, h, tw, th, ox, oy, mask, box };
 }
 
 // Loads everything referenced by the db. Fine while the game is tiny; switch to per-room loading later.

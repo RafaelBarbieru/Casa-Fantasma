@@ -28,12 +28,13 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
 - Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings).
 - Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
-- Click a painting to look behind it: sometimes there's a key. Keys you hold appear at the top left, each with a small picture of the door it opens. The **master key is gold**; other keys are grey. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
+- Click a painting and it slips off one nail and swings, showing the wall behind it. Sometimes something hangs there (a key or pills): **click it to take it**. Now and then a painting falls to the floor instead and cracks, with a crash.
+- Keys you hold appear at the top left, each with a small picture of the door it opens. The **master key is gold**; other keys are grey. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
 - **Level 1** has only the master door locked. From **level 2** on there are also locked **side doors**: their keys are somewhere in the level, and behind them is either the master key or nothing useful.
 - Click the arrow at the bottom (**back**) to return to the room you came from.
 - **The glow tells you what's left.** A warm, pulsing glow means there is still something to find there. A dull, still, grey-blue glow means there's nothing left:
-  - on a painting, you've already looked behind it;
-  - on a door, you've explored everything behind it: every painting searched and every door opened, all the way down.
+  - on a painting, you've already moved it;
+  - on a door, you've explored everything behind it: every painting moved, everything behind them taken, and every door opened, all the way down.
 
   A door with a locked door anywhere behind it that you haven't opened stays warm. So does the master door.
 - Levels are always solvable.
@@ -51,7 +52,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - after losing 5%, a slow heartbeat starts, about one beat a second;
   - it speeds up as health falls, switches to a fast heartbeat below 50%, and keeps getting faster towards 0.
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
-- **Pills** are hidden behind some paintings (never one that hides a key). They pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
+- **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
   - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
 - At 0% a screamer flashes on screen with a scream, and the game starts over from level 1.
 
@@ -71,6 +72,14 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - `perLevel`: pills hidden per level. The whole number is always placed and the fraction is the chance of one more (0.35 = 35% chance of one pill; 1.5 = one pill plus a 50% chance of a second). The last value repeats.
   - Changing these never changes the rest of a seed's layout.
   - The pill picture is `art-src/health.png`; the icon's position is `hud.pills`.
+- `paintings`: how a painting moves when you click it.
+  - `tiltDeg`: how far a slipping painting swings, in degrees (random between the two).
+  - `minDrop`: how far it also slides down at least. It slides further when it has to, so the key or pills behind it are fully visible.
+  - `fallChance`: how often a painting falls to the floor and cracks instead (0.2 = 20%). A painting too close to the floor to slip far enough always falls.
+  - `fallS`, `bounce`, `fallDeg`: how fast it falls, how much it bounces, how crooked it lands.
+  - `fallSfxDelayS`: delay of the fall sound. 0 = when you click; set it to the same value as `fallS` to play it exactly when the painting hits the floor.
+  - `crackPx`, `crackDarken`, `fallenGain`: crack thickness and darkness, and how much darker a fallen painting is.
+  - The key pictures are `art-src/key.png` and `art-src/master_key.png` (pills use `health.png`); their size on the wall is `scale` in `data/items.json`.
 - `heartbeat`: when it starts, when it switches to fast, and the gaps between beats.
 - `screamer`: how long it lasts and how fast it flashes.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
@@ -187,8 +196,9 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   |---|---|
   | `sfx/door` | a door opens (also when going back) |
   | `sfx/locked` | you try a locked door without its key |
-  | `sfx/painting` | you look behind a painting |
-  | `sfx/item` | you pick up an item (a key), just after the painting sound |
+  | `sfx/painting` | a painting slips |
+  | `sfx/fall` | a painting falls to the floor and cracks |
+  | `sfx/item` | you pick up a key or pills |
   | `sfx/level_end` | you open the master door |
   | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
   | `sfx/ghost_spotted` | a ghost fades in |

@@ -6,10 +6,13 @@ export const VS = `
 attribute vec2 aPos;
 uniform vec4 uRect;   // scene px: x, y, w, h (top-left origin)
 uniform vec2 uScene;  // scene size px
+uniform vec3 uRot;    // rotation (radians, clockwise on screen) around pivot x, y (scene px). 0 = none
 varying vec2 vUv;
 varying vec2 vP;
 void main() {
-  vec2 p = uRect.xy + aPos * uRect.zw;
+  vec2 p = uRect.xy + aPos * uRect.zw - uRot.yz;
+  float rc = cos(uRot.x), rs = sin(uRot.x);
+  p = uRot.yz + vec2(rc * p.x - rs * p.y, rs * p.x + rc * p.y);
   vP = p;
   vUv = aPos;
   vec2 c = p / uScene * 2.0 - 1.0;
@@ -68,12 +71,28 @@ uniform vec4 uGlow;    // rgb, amount (0 = off)
 uniform vec2 uGlowP;   // mip bias, self-brighten
 uniform float uClip;   // texture v below which glow + shadow are cut (floor items); > 1 = no cut
 uniform vec4 uFx;      // self-lit 0..1 (ignores the flashlight), opacity, brightness, additive 0..1 (ghosts)
+uniform vec4 uCrack;   // cracks (fallen paintings): impact point u, v; amount 0..1 (0 = none); seed
+uniform vec3 uCrackP;  // line width (uv of the height), darkening, texture aspect w/h
+// Jagged rays out of the impact point. Only runs for a cracked item (uniform branch, no texture fetch inside).
+float crack(vec2 uv) {
+  vec2 q = (uv - uCrack.xy) * vec2(uCrackP.z, 1.0) + 1e-4;
+  float r = length(q), a = atan(q.y, q.x), c = 0.0;
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i);
+    float h = fract(sin(fi * 12.9898 + uCrack.w) * 43758.5453);
+    float len = 0.12 + 0.3 * h;
+    float da = mod(a - fi * 0.8976 - h * 0.6 - uCrack.w + sin(r * 37.0 + fi * 5.1) * 0.15 + 3.14159, 6.28318) - 3.14159;
+    c = max(c, step(abs(da) * r, uCrackP.x * (1.0 - r / len)) * step(r, len));
+  }
+  return c;
+}
 void main() {
   vec4 s = texture2D(uTex, vUv);
   float under = (1.0 - s.a) * step(vUv.y, uClip);
   float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under;
   float L = mix(lightAt(vP), 1.0, uFx.x);
   vec3 col = s.rgb * mix(uTint, vec3(1.0), uFx.x) * L * uFx.z * (1.0 + uGlowP.y * uGlow.a);
+  if (uCrack.z > 0.0) col *= 1.0 - crack(vUv) * uCrack.z * uCrackP.y;
   if (uGlow.a > 0.001) {
     float b = texture2D(uTex, vUv, uGlowP.x).a;
     float g = smoothstep(0.0, 0.5, b) * under * uGlow.a;

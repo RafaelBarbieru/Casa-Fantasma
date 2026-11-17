@@ -24,5 +24,7 @@
   "door15":     { "src": "assets/door15.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
   "door16":     { "src": "assets/door16.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
   "door17":     { "src": "assets/door17.webp", "scale": 2.2,  "depth": 2, "placement": ["door"] },
-  "health":     { "src": "assets/health.webp", "placement": [] }
+  "key":        { "src": "assets/key.webp", "scale": 0.9, "depth": 3, "placement": [] },
+  "master_key": { "src": "assets/master_key.webp", "scale": 0.9, "depth": 3, "placement": [] },
+  "health":     { "src": "assets/health.webp", "scale": 0.45, "depth": 3, "placement": [] }
 }
