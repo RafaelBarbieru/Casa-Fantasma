@@ -7,6 +7,7 @@ import { Game } from './game.js';
 import { Debug } from './debug.js';
 import { loadSfx, unlockAudio, playSfx } from './audio.js';
 import { CONFIG } from './config.js';
+import { setLevelAmbience, startRandomAmbience, playRandomAmbience } from './ambience.js';
 
 const canvas = document.getElementById('c');
 const overlay = document.getElementById('overlay');
@@ -22,19 +23,22 @@ async function boot() {
   const db = await loadDB();
   const [assets] = await Promise.all([
     loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
-    loadSfx(Object.values(CONFIG.sfx)),
+    loadSfx([...Object.values(CONFIG.sfx), ...CONFIG.ambience.random.pool]),
   ]);
 
   const game = new Game({ db, assets });
+  const newWorld = (seed) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops });
   const regenerate = (seed) => {
-    game.setWorld(generateWorld(seed ?? (game.world.seed + 1) >>> 0, db));
+    game.setWorld(newWorld(seed ?? (game.world.seed + 1) >>> 0));
+    setLevelAmbience(game.world);
     wake();
   };
   game.onWorldEnd = () => regenerate();
   game.onItemClick = () => playSfx(CONFIG.sfx.itemClick);
-  const debug = new Debug({ game, renderer, regenerate: () => regenerate((Math.random() * 2 ** 32) >>> 0) });
+  const debug = new Debug({ game, renderer, regenerate: () => regenerate((Math.random() * 2 ** 32) >>> 0), playRandomAmbience });
   game.onRoomChange = () => debug.refresh();
-  game.setWorld(generateWorld(seedFromUrl(), db));
+  game.setWorld(newWorld(seedFromUrl()));
+  setLevelAmbience(game.world); // queued; starts on the start-overlay gesture
   console.info('[casa] seed', game.world.seed, game.world);
 
   // --- loop: renders only while something changes (battery-friendly on mobile)
@@ -81,6 +85,7 @@ async function boot() {
   overlay.addEventListener('pointerdown', () => {
     overlay.classList.add('hidden');
     unlockAudio();
+    startRandomAmbience();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
     game.enterRoom(0); // restart flicker-in now that the player is looking
     wake();

@@ -1,6 +1,6 @@
 // Audio. tools/audio.mjs emits <name>.ogg (Opus) + <name>.m4a (AAC); each device fetches ONE.
 // Short SFX -> decodeAudioData buffers (Web Audio), decoded at boot.
-// Long ambience/music (later) -> streamed <audio> element (decoded PCM costs ~23 MB per stereo minute).
+// Long ambience/music -> streamed <audio> element via playLoop() (decoded PCM costs ~23 MB per stereo minute).
 let ext = null;
 
 export function audioExt() {
@@ -33,11 +33,6 @@ export async function loadSfx(names) {
   }));
 }
 
-// Call from a user gesture (start overlay). Browsers create the context suspended.
-export function unlockAudio() {
-  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
-}
-
 export function playSfx(name, volume = 1) {
   const buf = buffers.get(name);
   if (!ctx || !buf) return;
@@ -53,3 +48,91 @@ export function playSfx(name, volume = 1) {
   node.connect(ctx.destination);
   src.start(0);
 }
+
+// --- Looping bed (level ambience): ONE reused <audio> element, streamed (not decoded), routed through a
+// GainNode for fades. Reusing one element matters on iOS: it stays "unlocked" after the first gesture play.
+let unlocked = false;
+let bed = null;      // { el, gain }
+let bedWant = null;  // { name, volume, fadeIn, fadeOut }: last requested bed (kept so unlock can start it)
+let bedName = null;  // what the element currently holds
+let bedToken = 0;    // invalidates pending swaps when a newer request arrives
+
+function getBed() {
+  if (bed) return bed;
+  const el = new Audio();
+  el.loop = true;
+  el.preload = 'auto';
+  let gain = null;
+  if (ctx) {
+    gain = ctx.createGain();
+    gain.gain.value = 0;
+    ctx.createMediaElementSource(el).connect(gain);
+    gain.connect(ctx.destination);
+  }
+  return (bed = { el, gain });
+}
+
+// Ramp bed volume to v over s seconds. Without Web Audio, falls back to a hard element.volume set.
+function rampBed(v, s) {
+  const { el, gain } = getBed();
+  if (!gain) { el.volume = v; return; }
+  const g = gain.gain, t = ctx.currentTime;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(v, t + Math.max(0.01, s));
+}
+
+function startBed() {
+  const want = bedWant;
+  if (!want || !unlocked) return;
+  const b = getBed();
+  const token = ++bedToken;
+  const begin = () => {
+    if (token !== bedToken) return;
+    if (bedName !== want.name) {
+      bedName = want.name;
+      b.el.src = audioUrl(want.name);
+    }
+    b.el.play().catch((e) => console.warn('[casa] ambience failed', want.name, e));
+    rampBed(want.volume, want.fadeIn);
+  };
+  if (bedName && bedName !== want.name && !b.el.paused) {
+    rampBed(0, want.fadeOut);
+    setTimeout(begin, want.fadeOut * 1000);
+  } else begin();
+}
+
+// Request the looping ambience. Safe to call before unlockAudio(): it starts on unlock.
+// Same name as the current bed -> keeps playing (no restart); different -> fade out, swap, fade in.
+export function playLoop(name, { volume = 1, fadeIn = 2, fadeOut = 1.5 } = {}) {
+  bedWant = name ? { name, volume, fadeIn, fadeOut } : null;
+  if (!bedWant) {
+    ++bedToken;
+    if (bed) rampBed(0, fadeOut);
+    return;
+  }
+  if (bedName === name && bed && !bed.el.paused) { rampBed(volume, fadeIn); return; }
+  startBed();
+}
+
+export const audioUnlocked = () => unlocked;
+
+// Call from a user gesture (start overlay). Browsers create the context suspended, and media
+// elements may only start playing from a gesture.
+export function unlockAudio() {
+  unlocked = true;
+  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  startBed();
+}
+
+// Mobile: silence everything while the tab is in the background.
+document.addEventListener('visibilitychange', () => {
+  if (!unlocked) return;
+  if (document.hidden) {
+    ctx?.suspend().catch(() => {});
+    bed?.el.pause();
+  } else {
+    ctx?.resume().catch(() => {});
+    if (bedWant && bed && bedName === bedWant.name) bed.el.play().catch(() => {});
+  }
+});

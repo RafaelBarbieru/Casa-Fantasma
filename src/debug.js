@@ -1,10 +1,11 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
-// Keys while visible: N = new random world, S = skip to next room.
+// Keys while visible: N = new random world, S = skip to next room, A = play a random ambience one-shot.
 export class Debug {
-  constructor({ game, renderer, regenerate }) {
+  constructor({ game, renderer, regenerate, playRandomAmbience }) {
     this.game = game;
     this.r = renderer;
     this.regenerate = regenerate;
+    this.playRandomAmbience = playRandomAmbience;
     this.on = new URLSearchParams(location.search).has('debug');
     this.frames = 0;
     this.fps = 0;
@@ -18,6 +19,7 @@ export class Debug {
       if (e.key === '`') { this.on = !this.on; this.refresh(); return; }
       if (!this.on) return;
       if (e.key === 'n' || e.key === 'N') this.regenerate();
+      if (e.key === 'a' || e.key === 'A') console.info('[casa] ambience one-shot', this.playRandomAmbience?.());
       if (e.key === 's' || e.key === 'S') {
         const g = this.game;
         g.enterRoom((g.roomIndex + 1) % g.world.rooms.length);
@@ -43,9 +45,10 @@ export class Debug {
       `seed ${g.world.seed}\n` +
       `room ${g.roomIndex + 1}/${g.world.rooms.length}  ${s?.template}\n` +
       `item ${s?.item} @ ${s?.slot}\n` +
+      `ambience ${g.world.ambience}\n` +
       `render ${this.fps} fps (on demand)\n` +
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}\n` +
-      `[\`] hide  [N] new world  [S] skip`;
+      `[\`] hide  [N] new world  [S] skip  [A] one-shot`;
   }
 
   refresh() {

@@ -50,4 +50,22 @@ export const CONFIG = {
   sfx: {
     itemClick: 'sfx/keypress_01',
   },
+
+  // Level ambience. Names are paths under audio-src without .wav (same as sfx).
+  ambience: {
+    // Each level gets ONE of these as its looping background, picked at random (from the world seed).
+    loops: ['ambience/unease01'],
+    loopVolume: 0.7,
+    fadeInS: 4,         // fade in when the level starts
+    fadeOutS: 2,        // fade out of the old loop when a new level picks a different one
+
+    // Random one-shot sounds played over the loop.
+    random: {
+      pool: ['ambience/monster_distant01', 'ambience/whisper01_left', 'ambience/whisper01_right'],
+      firstDelayS: [20, 40], // [min, max] seconds before the first one after entering the game
+      gapS: [25, 60],        // [min, max] seconds between attempts
+      chance: 0.8,           // 0..1 probability that an attempt actually plays (adds irregularity)
+      volume: [0.4, 0.8],    // [min, max] random volume per play
+    },
+  },
 };

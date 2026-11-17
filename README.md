@@ -84,6 +84,16 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   Each player downloads only the one their device needs. To convert by hand, run `npm run audio`; to redo everything, run `npm run audio:force`.
 - The converted files are not saved in git, only your WAVs (via LFS). This needs **ffmpeg** installed, which you already have.
 - Which sound plays for what is set in `src/config.js` under `sfx`. For example, `itemClick: 'sfx/keypress_01'` plays when you click an item. Write the path inside `audio-src/` without `.wav`.
+- **Level ambience** is set in `src/config.js` under `ambience`:
+  - `loops`: the background loops. Each level picks one of them at random and plays it on repeat. Add more names to the list to get more variety.
+  - `loopVolume`, `fadeInS`, `fadeOutS`: how loud the loop is and how many seconds it takes to fade in and out.
+  - `random`: occasional extra sounds over the loop (whispers, distant monster...).
+    - `pool`: which sounds can play.
+    - `gapS: [25, 60]`: wait between 25 and 60 seconds between attempts.
+    - `firstDelayS`: the wait before the first one.
+    - `chance`: how likely each attempt is to actually play (1 = always).
+    - `volume: [min, max]`: each play gets a random volume in this range.
+  - With the debug overlay open (`?debug`), press **A** to hear a random one right away.
 - Loops: cut at a silent or zero-crossing point so they don't click when they repeat, and keep loudness roughly even across files.
 
 ## Tweaking the look

@@ -3,9 +3,9 @@ import { createRng, randomSeed } from './rng.js';
 
 const fits = (slot, item) => (slot.accepts || []).some((t) => (item.placement || []).includes(t));
 
-// world = { seed, rooms: [{ template, item, slot }] }
+// world = { seed, ambience, rooms: [{ template, item, slot }] }   (a world is one level)
 // Each item appears in exactly one room; consecutive rooms avoid reusing the same slot id.
-export function generateWorld(seed, db) {
+export function generateWorld(seed, db, { ambience = [] } = {}) {
   const rng = createRng(seed);
   const rooms = [];
   let prevSlot = null;
@@ -23,7 +23,8 @@ export function generateWorld(seed, db) {
     prevSlot = slot.id;
     rooms.push({ template: templateId, item: itemId, slot: slot.id });
   }
-  return { seed: seed >>> 0, rooms };
+  // Picked after the rooms so adding/removing loops never changes a seed's room layout.
+  return { seed: seed >>> 0, ambience: ambience.length ? rng.pick(ambience) : null, rooms };
 }
 
 export function seedFromUrl() {

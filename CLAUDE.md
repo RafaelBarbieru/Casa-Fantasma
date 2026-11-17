@@ -31,6 +31,8 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 - `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred).
   - SFX: `CONFIG.sfx` maps role -> name; `loadSfx` decodes them into AudioBuffers at boot, `unlockAudio()` runs on the start overlay gesture, `playSfx(name)` plays. `game.onItemClick` plays `sfx.itemClick` (keypress_01).
   - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
+  - Level ambience: `generateWorld` picks `world.ambience` from `CONFIG.ambience.loops` (seeded, after the rooms, so layouts don't shift). `src/ambience.js` `setLevelAmbience(world)` -> `audio.playLoop()`: ONE reused `<audio loop>` element -> MediaElementSource -> GainNode (fades; reuse keeps iOS unlocked). Requests before the gesture are queued and start in `unlockAudio()`.
+  - Random one-shots: `CONFIG.ambience.random` (pool, gapS, firstDelayS, chance, volume), decoded with the SFX at boot, setTimeout chain, Math.random (not seeded), no immediate repeats, skipped while hidden. The tab going hidden suspends the context and pauses the bed.
   - Decode during loading or room transitions, not mid-interaction.
 
 ## Layout
@@ -45,7 +47,7 @@ src/input.js        Pointer Events -> move/down/tap/leave in scene coords. Touch
 src/world.js        generateWorld(seed, db): pure function, seeded. Reusable by a future editor
 src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
-src/debug.js        overlay (` key or ?debug): seed, room, fps, slot markers; N = new world, S = skip room
+src/debug.js        overlay (` key or ?debug): seed, room, ambience, fps, slot markers; N = new world, S = skip room, A = ambience one-shot
 data/items.json     { id: { src, scale, depth, placement:[tags] } }
 data/rooms.json     { id: { src, slots:[{ id, x, y, scale?, accepts:[tags] }] } }   (x, y = item center, scene px)
 tools/serve.mjs     static dev server (--lan, --port=, --dir=)
