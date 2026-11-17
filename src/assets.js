@@ -8,8 +8,9 @@ export async function loadJSON(url) {
 }
 
 export async function loadDB() {
-  const [items, rooms] = await Promise.all([loadJSON('data/items.json'), loadJSON('data/rooms.json')]);
-  return { items, rooms };
+  const [items, rooms, surfaces] = await Promise.all(
+    ['data/items.json', 'data/rooms.json', 'data/surfaces.json'].map(loadJSON));
+  return { items, rooms, surfaces };
 }
 
 export async function loadImage(url) {
@@ -25,6 +26,7 @@ export async function loadImage(url) {
 }
 
 const pot = (n) => 2 ** Math.ceil(Math.log2(n));
+const isPot = (n) => n > 0 && (n & (n - 1)) === 0;
 
 // Sprite = image centered in a transparent power-of-two canvas (WebGL1 mipmaps need POT).
 // Mip levels are what make the cheap shadow blur + glow possible (texture2D bias).
@@ -47,14 +49,20 @@ export function makeSprite(img) {
 // Loads everything referenced by the db. Fine while the game is tiny; switch to per-room loading later.
 export async function loadAssets(db, onProgress = () => {}) {
   const jobs = [];
-  for (const [id, r] of Object.entries(db.rooms)) jobs.push(['room', id, r.src]);
+  // Wall/floor textures tile (REPEAT + mipmaps), so they must be power-of-two sized.
+  for (const group of ['walls', 'floors'])
+    for (const [id, t] of Object.entries(db.surfaces[group])) jobs.push(['surface', id, t.src]);
   for (const [id, it] of Object.entries(db.items)) jobs.push(['item', id, it.src]);
-  const out = { rooms: new Map(), sprites: new Map() };
+  const out = { surfaces: new Map(), sprites: new Map() };
   let done = 0;
   await Promise.all(
     jobs.map(async ([kind, id, src]) => {
       const img = await loadImage(src);
-      if (kind === 'room') out.rooms.set(id, img);
+      if (kind === 'surface') {
+        if (!isPot(img.naturalWidth) || !isPot(img.naturalHeight))
+          console.warn(`[casa] ${src} is ${img.naturalWidth}x${img.naturalHeight}; tiling textures must be power-of-two (256, 512...)`);
+        out.surfaces.set(id, img);
+      }
       else out.sprites.set(id, makeSprite(img));
       onProgress(++done / jobs.length);
     }),

@@ -16,6 +16,8 @@ const TEXT = {
   escaped: 'You escaped',
 };
 
+export const floorLineY = () => CONFIG.sceneH * CONFIG.room.floorLine;
+
 // Flashlight flicker when the room comes back (deterministic, cheap).
 function flickerIn(t) {
   if (t >= 1) return 1;
@@ -59,20 +61,32 @@ export class Game {
     this.roomIndex = i;
     const spec = this.world.rooms[i];
     const template = this.db.rooms[spec.template];
+    const floorY = floorLineY();
     const items = spec.items.map((e, idx) => {
       const slot = template.slots.find((s) => s.id === e.slot);
       const def = this.db.items[e.item];
       const sprite = this.assets.sprites.get(e.item);
       const s = (def.scale ?? 1) * (slot.scale ?? 1);
+      const h = sprite.h * s;
+      const onFloor = slot.anchor === 'floor';
+      // Floor items stand on the wall/floor line; wall items are pushed up so they never reach the floor.
+      const cy = onFloor ? floorY - h / 2 : Math.min(slot.y, floorY - CONFIG.room.wallMargin - h / 2);
       const x0 = slot.x - (sprite.w * s) / 2;
-      const y0 = slot.y - (sprite.h * s) / 2;
+      const y0 = cy - h / 2;
       return {
-        e, uid: `${i}:${idx}`, id: e.item, def, sprite, s, cx: slot.x, cy: slot.y, x0, y0,
+        e, uid: `${i}:${idx}`, id: e.item, def, sprite, s, cx: slot.x, cy, x0, y0,
         depth: def.depth ?? 8, glow: 0, shake: 0,
+        // Glow + shadow are cut at the sprite's bottom edge for floor items (no halo spilling onto the floor).
+        clip: onFloor ? (sprite.oy + sprite.h) / sprite.th : 2,
         rect: [x0 - sprite.ox * s, y0 - sprite.oy * s, sprite.tw * s, sprite.th * s],
       };
     });
-    this.room = { spec, template, bg: this.assets.rooms.get(spec.template), items };
+    const sf = this.db.surfaces;
+    const bg = {
+      wall: this.assets.surfaces.get(spec.wall), wallTile: sf.walls[spec.wall]?.tile ?? 512,
+      floor: this.assets.surfaces.get(spec.floor), floorTile: sf.floors[spec.floor]?.tile ?? 512,
+    };
+    this.room = { spec, template, bg, items };
     this.hover = null;
     this.phase = 'in';
     this.phaseT = 0;
@@ -269,6 +283,7 @@ export class Game {
         shadow: [dx / it.rect[2], dy / it.rect[3], sh.blurBias + it.depth * sh.blurPerDepth, sh.strength],
         glow: [g.color[0], g.color[1], g.color[2], glowA],
         glowP: [g.bias, g.brighten],
+        clip: it.clip,
       };
     });
     return {

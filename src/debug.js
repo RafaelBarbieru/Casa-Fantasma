@@ -1,6 +1,8 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
 // Keys while visible: N = new random world, K = take every key, B = jump back to the start room,
 // A = play a random ambience one-shot.
+import { CONFIG } from './config.js';
+
 export class Debug {
   constructor({ game, renderer, regenerate, playRandomAmbience }) {
     this.game = game;
@@ -53,6 +55,7 @@ export class Debug {
     const lines = [
       `seed ${w.seed}`,
       `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}`,
+      `layout ${s?.template}  ${s?.wall} + ${s?.floor}`,
     ];
     for (const it of s?.items ?? []) {
       let t = `  ${it.item} @ ${it.slot}`;
@@ -79,7 +82,7 @@ export class Debug {
     this.markers.textContent = '';
     const used = new Set(this.game.room.spec.items.map((it) => it.slot));
     for (const slot of this.game.room.template.slots) {
-      const p = this.r.sceneToCss(slot.x, slot.y);
+      const p = this.r.sceneToCss(slot.x, slot.anchor === 'floor' ? CONFIG.sceneH * CONFIG.room.floorLine : slot.y);
       const m = document.createElement('div');
       m.className = 'slot' + (used.has(slot.id) ? ' used' : '');
       m.style.left = p.x + 'px';

@@ -1,0 +1,12 @@
+{
+  "walls": {
+    "wall01": { "src": "assets/wall01.webp", "tile": 512 },
+    "wall02": { "src": "assets/wall02.webp", "tile": 512 },
+    "wall03": { "src": "assets/wall03.webp", "tile": 512 }
+  },
+  "floors": {
+    "floor01": { "src": "assets/floor01.webp", "tile": 640 },
+    "floor02": { "src": "assets/floor02.webp", "tile": 640 },
+    "floor03": { "src": "assets/floor03.webp", "tile": 640 }
+  }
+}

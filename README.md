@@ -52,41 +52,58 @@ Recommended settings: viewport 1280×720, enable "Mobile friendly" (landscape), 
 
 ## Adding art
 
-### Rooms (backgrounds)
-- Render at **1920×1080**, export as **PNG** (or WebP), and put it in `art-src/rooms/`.
-- Rooms are only scenery. The player can't click them.
-- Register the room in `data/rooms.json` with the **slots** where items can go:
+### Rooms: wall and floor textures
+Rooms are built from **seamless textures**, not from a background image:
+- The **wall** is tiled over the top 80% of the screen.
+- The **floor** fills the bottom 20%, drawn in perspective so it recedes toward the wall.
+- Every room picks a random wall and a random floor. The next room always has a different wall from the one you came from.
+
+To add a texture:
+- Make it **seamless** and **square, with a power-of-two size** (256×256, 512×512 or 1024×1024).
+- Save it in `art-src/` as `wallNN.png` or `floorNN.png`.
+- Register it in `data/surfaces.json`:
 
 ```json
-"room01": {
-  "src": "assets/rooms/room01.webp",
-  "slots": [
-    { "id": "wall-left", "x": 460, "y": 480, "accepts": ["wall"] },
-    { "id": "wall-high", "x": 720, "y": 280, "scale": 0.85, "accepts": ["wall"] }
-  ]
-}
+"walls":  { "wall04":  { "src": "assets/wall04.webp",  "tile": 512 } },
+"floors": { "floor04": { "src": "assets/floor04.webp", "tile": 640 } }
 ```
-`x`, `y` are the pixel position of the item's **center** in the 1920×1080 image. You can read them straight off the render in Blender or any image editor.
-`scale` (optional) shrinks or enlarges items in that spot, which is useful for perspective. `accepts` lists the kinds of items that can go there.
+`tile` is how big one copy of the texture is on screen, in pixels of the 1920×1080 screen. Bigger means a larger pattern. For the floor, this is the size where it meets the wall; it grows toward the bottom of the screen.
+
+`src/config.js` → `room`:
+- `floorLine`: where the wall meets the floor (0.8 = 80% down).
+- `horizonY`: the eye level. A lower number makes the floor look steeper.
+- `seam`: how dark the corner where the wall meets the floor is.
+- `wallMargin`: the minimum gap between a painting and the floor.
+
+### Where things go (layouts)
+`data/rooms.json` has one layout per kind of room, with the **slots** where items can go:
+
+```json
+"doors":   { "slots": [ { "id": "door-left", "x": 420, "anchor": "floor", "accepts": ["door"] } ] },
+"gallery": { "slots": [ { "id": "wall-1", "x": 260, "y": 420, "accepts": ["wall"] } ] }
+```
+- `x`, `y` are the pixel position of the item's **center** on the 1920×1080 screen.
+- `"anchor": "floor"` stands the item on the floor line (its bottom edge sits where the wall meets the floor), so it needs no `y`. This is what doors use. Floor items don't glow or cast a shadow below that line.
+- Wall items (paintings) are pushed up automatically if they would reach the floor.
+- `scale` (optional) shrinks or enlarges items in that spot.
+- `accepts` lists the kinds of items that can go there.
 
 ### Items
 - Doors are items with `"placement": ["door"]` and go in `door` slots. Paintings use `"wall"`.
-- Doors are drawn flat on the wall, so all door slots in a room should sit on the same line (same `y`).
 - A painting room needs as many `wall` slots as the most paintings it can have (4), and they must not overlap.
-- Render with a **transparent background** (Film → Transparent), crop to the object, and export as **PNG with alpha** (or WebP) into `art-src/items/`.
-- Render them with the same camera and lens as the room so the perspective matches.
+- Render with a **transparent background** (Film → Transparent), crop to the object, and export as **PNG with alpha** (or WebP) into `art-src/`.
 - Low-resolution art is fine: the PS1 look renders the whole screen at low resolution anyway (see below). Use `scale` in `items.json` to give every door or painting a sensible size.
 - Keep the lighting in the render flat or neutral. The game adds the flashlight on top.
 - Register the item in `data/items.json`:
 
 ```json
-"painting01": { "src": "assets/items/painting01.webp", "scale": 1.4, "depth": 8, "placement": ["wall"] }
+"painting01": { "src": "assets/painting01.webp", "scale": 1.8, "depth": 8, "placement": ["wall"] }
 ```
 `depth` is how far the object sticks out from the wall. A bigger value gives a bigger, softer, more mobile shadow.
 `placement` must match a slot's `accepts`. Here, "wall" items only go in wall slots.
 
 ### Where images go
-Put your source images in `art-src/` (PNG, JPG or WebP). `npm run dev` and `npm run build` turn them automatically into small WebP files in `assets/`, in the same folder structure: `art-src/items/door01.png` becomes `assets/items/door01.webp`. That `.webp` path is what you write in the `data/*.json` files.
+Put your source images in `art-src/` (PNG, JPG or WebP). `npm run dev` and `npm run build` turn them automatically into small WebP files in `assets/`, in the same folder structure: `art-src/door01.png` becomes `assets/door01.webp`. Name files by what they are (`doorNN`, `paintingNN`, `wallNN`, `floorNN`). That `.webp` path is what you write in the `data/*.json` files.
 While `npm run dev` is running, a new or changed image (or sound) is converted within a second; just reload the page. Deleting a source also deletes its converted file. To redo every image, run `npm run images:force`.
 Don't put anything in `assets/` yourself: it is generated, not saved in git, and may be overwritten.
 
@@ -134,4 +151,4 @@ All visual settings live in `src/config.js`, and you can change them freely:
 
 ## What's next
 - Developer tools for placing slots visually, and for designing levels and events.
-- Door/key/painting sounds, separate backgrounds for door rooms and painting rooms, a real ending.
+- Door/key/painting sounds, a real ending.

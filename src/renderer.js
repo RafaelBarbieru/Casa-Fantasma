@@ -72,8 +72,8 @@ export class Renderer {
     return { p, u };
   }
 
-  // source: HTMLImageElement | HTMLCanvasElement. mip=true requires POT size.
-  texture(source, mip) {
+  // source: HTMLImageElement | HTMLCanvasElement. mip/repeat require POT size.
+  texture(source, mip, repeat = false) {
     let t = this.textures.get(source);
     if (t) return t;
     const gl = this.gl;
@@ -81,8 +81,9 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     if (mip) {
       gl.generateMipmap(gl.TEXTURE_2D);
@@ -173,7 +174,8 @@ export class Renderer {
     gl.uniform1i(u.uTex, 0);
   }
 
-  // frame = { light:{x,y,r,exposure}, bg: Image, items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten] }] }
+  // frame = { light:{x,y,r,exposure}, bg: { wall, floor, wallTile, floorTile } | null,
+//           items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten], clip }] }
   // hud = Hud (canvas + version) or null
   draw(frame, hud) {
     if (this.lost) return;
@@ -202,11 +204,18 @@ export class Renderer {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
 
-    if (frame.bg) {
+    if (frame.bg?.wall && frame.bg.floor) {
+      const bg = frame.bg, u = this.pBg.u, r = CONFIG.room;
       gl.disable(gl.BLEND);
       this._common(this.pBg, frame.light);
-      gl.bindTexture(gl.TEXTURE_2D, this.texture(frame.bg, false));
-      gl.uniform4f(this.pBg.u.uRect, 0, 0, CONFIG.sceneW, CONFIG.sceneH);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture(bg.floor, true, true));
+      gl.uniform1i(u.uFloor, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture(bg.wall, true, true));
+      gl.uniform4f(u.uRoom, CONFIG.sceneH * r.floorLine, r.horizonY, bg.wallTile, bg.floorTile);
+      gl.uniform3f(u.uSeam, r.seam[0], r.seam[1], CONFIG.sceneW / 2);
+      gl.uniform4f(u.uRect, 0, 0, CONFIG.sceneW, CONFIG.sceneH);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
@@ -221,6 +230,7 @@ export class Renderer {
         gl.uniform4fv(u.uShadow, it.shadow);
         gl.uniform4fv(u.uGlow, it.glow);
         gl.uniform2fv(u.uGlowP, it.glowP);
+        gl.uniform1f(u.uClip, it.clip ?? 2);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
     }

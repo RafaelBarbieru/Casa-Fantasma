@@ -6,7 +6,8 @@
 //     kind: 'doors' | 'paintings',    start has exactly one way in (its parent), which is where "back" goes.
 //     parent: index | -1,
 //     stage: n,                       which key-stage first makes this room reachable (debug/editor info)
-//     template: roomId,
+//     template: roomId,               data/rooms.json layout (slots)
+//     wall, floor,                    data/surfaces.json texture ids
 //     items: [{ item, slot,           item = data/items.json id, slot = slot id in the template
 //               to?: index | EXIT,    doors only: target room
 //               lock?: keyIndex,      doors only: locked until key `lock` is used on it
@@ -104,7 +105,9 @@ export function generateWorld(seed, db, { ambience = [], maze = {} } = {}) {
   const commonDoors = doorArt.slice(reserved.length);
   keys.forEach((k, i) => (k.door = reserved[i] ?? null));
 
-  const out = rooms.map((r) => {
+  const walls = Object.keys(db.surfaces?.walls ?? {}), floors = Object.keys(db.surfaces?.floors ?? {});
+  const out = [];
+  for (const r of rooms) {
     const tag = r.kind === 'doors' ? 'door' : 'wall';
     const need = r.kind === 'doors' ? r.doors.length : r.paintings.length;
     const templates = Object.keys(db.rooms).filter((id) => db.rooms[id].slots.filter((s) => fits(s, tag)).length >= need);
@@ -136,8 +139,12 @@ export function generateWorld(seed, db, { ambience = [], maze = {} } = {}) {
         return it;
       });
     }
-    return { kind: r.kind, parent: r.parent, stage: r.stage, template, items };
-  });
+    // Surfaces: a different wall from the room you came from, so walking through a door visibly changes the room.
+    const prev = r.parent >= 0 ? out[r.parent] : null;
+    const pickOther = (list, not) => rng.pick(list.length > 1 ? list.filter((x) => x !== not) : list) ?? null;
+    const wall = pickOther(walls, prev?.wall), floor = pickOther(floors, null);
+    out.push({ kind: r.kind, parent: r.parent, stage: r.stage, template, wall, floor, items });
+  }
   // Without reserved art, a key names the art its door happened to get.
   keys.forEach((k, i) => {
     if (!k.door) k.door = out[k.room].items.find((it) => it.lock === i).item;

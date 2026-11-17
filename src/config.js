@@ -7,6 +7,14 @@ export const CONFIG = {
   maxDpr: 2,
   maxViewportW: 2560,
 
+  // Rooms are built from tiling textures (data/surfaces.json): wall on top, floor in perspective below.
+  room: {
+    floorLine: 0.8,     // where the wall meets the floor, as a fraction of the screen height from the top
+    horizonY: 500,      // eye level (scene px). The floor's lines converge here; lower = steeper floor
+    seam: [0.55, 40],   // darkening where wall meets floor: [strength 0..1, width in scene px]
+    wallMargin: 30,     // wall items (paintings) keep at least this many px above the floor line
+  },
+
   // Duration (s) of the shake when a locked door is tried.
   lockedShakeS: 0.35,
 

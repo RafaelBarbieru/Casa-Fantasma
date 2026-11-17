@@ -41,9 +41,22 @@ float dither() {
 }
 `;
 
+// Room background, all procedural from two tiling textures:
+//   wall (uTex) repeats flat above the floor line; floor (uFloor) below it in perspective. The floor row at
+//   screen y is at depth z = d0 / (y - horizon), so texels grow toward the bottom and the tile lines converge
+//   on (scene centre, horizon). Both are sampled unconditionally (no texture fetch inside a branch -> mip-safe).
 export const FS_BG = HEAD + `
+uniform sampler2D uFloor;
+uniform vec4 uRoom;  // floor line y, horizon y, wall tile px, floor tile px
+uniform vec3 uSeam;  // darkening at the floor line: strength, width px; + vanishing point x
 void main() {
-  vec3 c = texture2D(uTex, vUv).rgb;
+  float fy = uRoom.x, d0 = fy - uRoom.y;
+  vec3 wall = texture2D(uTex, vP / uRoom.z).rgb;
+  float z = d0 / max(vP.y - uRoom.y, d0);
+  vec2 fuv = vec2((vP.x - uSeam.z) * z, d0 * z) / uRoom.w;
+  vec3 floorC = texture2D(uFloor, fuv).rgb;
+  vec3 c = vP.y < fy ? wall : floorC;
+  c *= 1.0 - uSeam.x * exp(-abs(vP.y - fy) / uSeam.y);
   gl_FragColor = vec4(c * uTint * lightAt(vP) + dither(), 1.0);
 }`;
 
@@ -53,9 +66,10 @@ export const FS_ITEM = HEAD + `
 uniform vec4 uShadow;  // uv offset x, y, mip bias, strength
 uniform vec4 uGlow;    // rgb, amount (0 = off)
 uniform vec2 uGlowP;   // mip bias, self-brighten
+uniform float uClip;   // texture v below which glow + shadow are cut (floor items); > 1 = no cut
 void main() {
   vec4 s = texture2D(uTex, vUv);
-  float under = 1.0 - s.a;
+  float under = (1.0 - s.a) * step(vUv.y, uClip);
   float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under;
   float L = lightAt(vP);
   vec3 col = s.rgb * uTint * L * (1.0 + uGlowP.y * uGlow.a);

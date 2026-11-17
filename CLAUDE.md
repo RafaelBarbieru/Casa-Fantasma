@@ -15,9 +15,9 @@ The user-facing docs are in README.md; keep them in sync when workflows change.
 
 ## Art pipeline (as delivered)
 The user said "GLB", but they actually deliver **pre-rendered WebP**:
-- Rooms: `assets/rooms/*.webp`, opaque, 1920×1080. This equals the scene coordinate space (`CONFIG.sceneW/H`).
-- Items: `assets/items/*.webp`, with alpha, cropped. On screen size = native px × `item.scale` × `slot.scale`.
-Sources live in `art-src/` (png/jpg -> lossy q90 WebP, webp copied as-is) and `tools/images.mjs` writes `assets/**/<name>.webp`. Data files reference the generated `assets/...webp` paths.
+- Flat `art-src/`, named by kind: `doorNN`, `paintingNN` (items, alpha, cropped; screen size = native px × `item.scale` × `slot.scale`), `wallNN`, `floorNN` (seamless POT tiling textures).
+- No room backgrounds: the scene is 1920×1080 scene px (`CONFIG.sceneW/H`); FS_BG tiles the wall above `room.floorLine` and draws the floor in perspective below it.
+Sources (png/jpg -> lossy q90 WebP, webp copied as-is) -> `tools/images.mjs` -> `assets/<name>.webp`. Data files reference the generated `assets/...webp` paths.
 Do not add a 3D runtime unless the user explicitly asks for one.
 
 ## Repo
@@ -51,7 +51,8 @@ src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
 src/debug.js        overlay (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot
 data/items.json     { id: { src, scale, depth, placement:[tags] } }   tags: "door" | "wall" (paintings)
-data/rooms.json     { id: { src, slots:[{ id, x, y, scale?, accepts:[tags] }] } }   (x, y = item center, scene px)
+data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery"
+data/surfaces.json  { walls: { id: { src, tile } }, floors: { id: { src, tile } } }   tile = scene px per repeat (floor: at the floor line)
 tools/serve.mjs     static dev server (--lan, --port=, --dir=). Without --dir, fs.watch re-runs audio.mjs/images.mjs on source changes (debounced)
 tools/images.mjs    art-src/** -> assets/**/*.webp via ffmpeg libwebp (incremental, orphan cleanup, never touches assets/audio/)
 tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (hand-written zip writer, deflate)
@@ -59,7 +60,8 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 
 ## Rendering model
 - PS1 mode (`CONFIG.ps1.enabled`): everything below renders into a low-res FBO (`ps1.width` x 16:9, NEAREST), then `FS_POST` draws it to the letterbox with nearest upscale + `colorBits` quantize using a 4x4 Bayer dither in low-res pixel space. Rects and the beam are snapped to low-res pixels (`ps1.snap`). The scene shaders' noise dither is off in this mode (`uNoise`).
-- One draw for the background (blending off), then one draw per item (premultiplied, `ONE, ONE_MINUS_SRC_ALPHA`), then the HUD canvas (`FS_HUD`, texture re-uploaded only when `hud.version` changes).
+- Floor-anchored items (`slot.anchor: 'floor'`, i.e. doors) sit with their bottom on the floor line; FS_ITEM's `uClip` cuts glow + shadow below the sprite's bottom edge. Wall items are clamped to `floorY - room.wallMargin` in `Game.enterRoom`.
+- One draw for the background (blending off; wall + floor textures on units 0/1, REPEAT + mipmaps, both sampled outside any branch), then one draw per item (premultiplied, `ONE, ONE_MINUS_SRC_ALPHA`), then the HUD canvas (`FS_HUD`, texture re-uploaded only when `hud.version` changes).
 - Item shader, all in one pass:
   - sprite × light;
   - drop shadow = alpha sampled at `uv - offset` with mip bias (blur), drawn only outside the sprite;
@@ -75,7 +77,8 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Stages: grow a region behind unlocked doors -> hide key s in a painting room of that region -> lock a free door reachable so far with key s -> it leads to stage s+1 (or EXIT for the last lock). Leftover doors -> decoy painting rooms. Always solvable.
 - Each lock gets door art reserved for it (unique in the level), so the key's HUD thumbnail names its door. No art repeats within a room.
 - Using a key consumes it. Taking the exit shows "You escaped", then the world regenerates with `seed+1`.
-- Seed 42: room 0 doors -> rooms 1, 2, 3; key 0 is behind painting03 in room 1 and opens door11 in room 3.
+- Each room also gets `wall`/`floor` (seeded, picked after its items); the wall always differs from the parent room's.
+- Seed 42: room 0 (wall01/floor02) doors -> rooms 1, 2, 3; key 0 is behind painting08 in room 1 and opens door11 in room 3.
 - Headless check: import world.js + game.js in Node with stub sprites (full masks), tap item centres, step update(0.05). Game has no DOM deps.
 - In an occluded/automated Chrome tab rAF runs ~2 fps and dt is capped at 0.05, so transitions take ~10x longer there.
 
