@@ -1,6 +1,8 @@
 // Minimal raw-WebGL1 renderer. Dumb by design: game.js builds a frame description, this draws it.
+// PS1 mode (CONFIG.ps1.enabled): the scene + HUD are drawn into a small framebuffer (ps1.width x 16:9),
+// then one post pass upscales it to the letterbox with hard pixels and 15-bit ordered-dither color.
 import { CONFIG } from './config.js';
-import { VS, FS_BG, FS_ITEM } from './shaders.js';
+import { VS, FS_BG, FS_ITEM, FS_HUD, FS_POST } from './shaders.js';
 
 export class Renderer {
   static create(canvas) {
@@ -32,8 +34,12 @@ export class Renderer {
     this.gl = gl;
     this.lost = false;
     this.textures = new WeakMap();
+    this.fb = null;     // { fbo, tex, w, h } low-res target, created on first PS1 draw
+    this.hudTex = null; // recreated after context loss
     this.pBg = this._program(VS, FS_BG);
     this.pItem = this._program(VS, FS_ITEM);
+    this.pHud = this._program(VS, FS_HUD);
+    this.pPost = this._program(VS, FS_POST);
     this.quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
@@ -88,6 +94,45 @@ export class Renderer {
     return t;
   }
 
+  // Low-res render target for PS1 mode.
+  _target() {
+    const gl = this.gl;
+    const w = CONFIG.ps1.width, h = Math.round((w * CONFIG.sceneH) / CONFIG.sceneW);
+    if (this.fb && this.fb.w === w && this.fb.h === h) return this.fb;
+    if (this.fb) {
+      gl.deleteFramebuffer(this.fb.fbo);
+      gl.deleteTexture(this.fb.tex);
+    }
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST],
+      [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return (this.fb = { fbo, tex, w, h });
+  }
+
+  // HUD canvas -> texture, re-uploaded only when its version changes.
+  _hud(hud) {
+    const gl = this.gl;
+    if (!this.hudTex) {
+      this.hudTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.hudTex);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST],
+        [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      this.hudVer = -1;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.hudTex);
+    if (this.hudVer !== hud.version) {
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hud.canvas);
+      this.hudVer = hud.version;
+    }
+  }
+
   // cssW/cssH = canvas CSS size. Returns true if the backbuffer changed.
   resize(cssW, cssH) {
     const { sceneW, sceneH, maxDpr, maxViewportW } = CONFIG;
@@ -124,17 +169,34 @@ export class Renderer {
     gl.uniform4f(u.uLight, light.x, light.y, light.r, light.exposure);
     gl.uniform4f(u.uLightP, f.ambient, f.softness, f.hotspot, f.gain);
     gl.uniform3f(u.uTint, f.tint[0], f.tint[1], f.tint[2]);
+    gl.uniform1f(u.uNoise, CONFIG.ps1.enabled ? 0 : 1);
     gl.uniform1i(u.uTex, 0);
   }
 
   // frame = { light:{x,y,r,exposure}, bg: Image, items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten] }] }
-  draw(frame) {
+  // hud = Hud (canvas + version) or null
+  draw(frame, hud) {
     if (this.lost) return;
-    const gl = this.gl, v = this.view;
+    const gl = this.gl, v = this.view, ps1 = CONFIG.ps1;
     gl.viewport(0, 0, v.bw, v.bh);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.viewport(v.x, v.y, v.w, v.h);
+    let fb = null;
+    if (ps1.enabled) {
+      fb = this._target();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb.fbo);
+      gl.viewport(0, 0, fb.w, fb.h);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // No sub-pixel precision: snap sprites and the beam to whole low-res pixels.
+      if (ps1.snap) {
+        const px = CONFIG.sceneW / fb.w, snap = (n) => Math.round(n / px) * px;
+        frame = {
+          ...frame,
+          light: { ...frame.light, x: snap(frame.light.x), y: snap(frame.light.y) },
+          items: frame.items.map((it) => ({ ...it, rect: [snap(it.rect[0]), snap(it.rect[1]), it.rect[2], it.rect[3]] })),
+        };
+      }
+    } else gl.viewport(v.x, v.y, v.w, v.h);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
@@ -161,6 +223,32 @@ export class Renderer {
         gl.uniform2fv(u.uGlowP, it.glowP);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
+    }
+
+    if (hud) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.useProgram(this.pHud.p);
+      this._hud(hud);
+      gl.uniform2f(this.pHud.u.uScene, CONFIG.sceneW, CONFIG.sceneH);
+      gl.uniform4f(this.pHud.u.uRect, 0, 0, CONFIG.sceneW, CONFIG.sceneH);
+      gl.uniform1i(this.pHud.u.uTex, 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    if (fb) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(v.x, v.y, v.w, v.h);
+      gl.disable(gl.BLEND);
+      const u = this.pPost.u;
+      gl.useProgram(this.pPost.p);
+      gl.bindTexture(gl.TEXTURE_2D, fb.tex);
+      gl.uniform2f(u.uScene, CONFIG.sceneW, CONFIG.sceneH);
+      gl.uniform4f(u.uRect, 0, 0, CONFIG.sceneW, CONFIG.sceneH);
+      gl.uniform2f(u.uRes, fb.w, fb.h);
+      gl.uniform2f(u.uPs1, 2 ** ps1.colorBits - 1, ps1.dither);
+      gl.uniform1i(u.uTex, 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
   }
 }

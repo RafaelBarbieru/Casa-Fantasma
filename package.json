@@ -7,11 +7,13 @@
   "scripts": {
     "audio": "node tools/audio.mjs",
     "audio:force": "node tools/audio.mjs --force",
-    "predev": "node tools/audio.mjs",
+    "images": "node tools/images.mjs",
+    "images:force": "node tools/images.mjs --force",
+    "predev": "node tools/audio.mjs && node tools/images.mjs",
     "dev": "node tools/serve.mjs",
-    "predev:lan": "node tools/audio.mjs",
+    "predev:lan": "node tools/audio.mjs && node tools/images.mjs",
     "dev:lan": "node tools/serve.mjs --lan",
-    "prebuild": "node tools/audio.mjs",
+    "prebuild": "node tools/audio.mjs && node tools/images.mjs",
     "build": "node tools/build.mjs",
     "preview": "node tools/serve.mjs --dir=dist/web"
   }

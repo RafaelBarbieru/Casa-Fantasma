@@ -28,15 +28,16 @@ uniform sampler2D uTex;
 uniform vec4 uLight;   // beam x, y (scene px), radius, exposure
 uniform vec4 uLightP;  // ambient, softness, hotspot, gain
 uniform vec3 uTint;
+uniform float uNoise;  // 1 = add the fine noise dither, 0 = off (the PS1 post pass dithers instead)
 float lightAt(vec2 p) {
   float d = length(p - uLight.xy) / uLight.z;
   float spot = 1.0 - smoothstep(1.0 - uLightP.y, 1.0, d);
   float hot = 1.0 - smoothstep(0.0, 0.5, d);
   return (uLightP.x + spot * (uLightP.w + uLightP.z * hot)) * uLight.w;
 }
-// Interleaved gradient noise: kills banding in the dark gradients.
+// Interleaved gradient noise: kills banding in the dark gradients (full-res mode only).
 float dither() {
-  return (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0;
+  return uNoise * (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0;
 }
 `;
 
@@ -64,4 +65,36 @@ void main() {
     col += uGlow.rgb * g * (0.3 + 0.7 * min(L, 1.0));
   }
   gl_FragColor = vec4(col + dither() * s.a, s.a + sh);
+}`;
+
+// HUD layer: premultiplied canvas texture, no lighting.
+export const FS_HUD = `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+void main() {
+  gl_FragColor = texture2D(uTex, vUv);
+}`;
+
+// PS1 post pass: the low-res framebuffer is drawn to the screen with nearest filtering, and each low-res
+// pixel is reduced to uPs1.x levels per channel using a 4x4 ordered (Bayer) dither, like the PS1's 15-bit output.
+export const FS_POST = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uRes;   // framebuffer size px
+uniform vec2 uPs1;   // levels - 1 per channel, dither strength
+float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+void main() {
+  vec2 px = floor(vUv * uRes);
+  // The framebuffer's row 0 is the bottom; scene uv has y down.
+  vec3 c = texture2D(uTex, vec2(px.x + 0.5, uRes.y - px.y - 0.5) / uRes).rgb;
+  float d = (bayer4(px) - 0.5) * uPs1.y;
+  c = clamp(floor(c * uPs1.x + 0.5 + d) / uPs1.x, 0.0, 1.0);
+  gl_FragColor = vec4(c, 1.0);
 }`;

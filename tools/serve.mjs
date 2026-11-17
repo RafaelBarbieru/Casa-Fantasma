@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -58,4 +59,37 @@ http
       for (const list of Object.values(os.networkInterfaces()))
         for (const a of list || []) if (a.family === 'IPv4' && !a.internal) console.log(`  http://${a.address}:${port}/`);
     console.log('  add ?debug for the debug overlay, ?seed=123 for a fixed world');
+    if (!arg('dir')) watchSources();
   });
+
+// Dev only: re-run the asset pipelines when their sources change, so new WAVs/PNGs show up on page reload.
+// Debounced (exporters write files in several steps) and serialized per pipeline.
+function watchSources() {
+  const pipelines = [
+    { dir: 'audio-src', tool: 'tools/audio.mjs' },
+    { dir: 'art-src', tool: 'tools/images.mjs' },
+  ];
+  for (const p of pipelines) {
+    const dir = path.join(ROOT, p.dir);
+    if (!fs.existsSync(dir)) continue;
+    let timer = 0, running = false, again = false;
+    const go = () => {
+      if (running) return void (again = true);
+      running = true;
+      const child = spawn(process.execPath, [path.join(ROOT, p.tool)], { cwd: ROOT, stdio: 'inherit' });
+      child.on('close', () => {
+        running = false;
+        if (again) (again = false), go();
+      });
+    };
+    try {
+      fs.watch(dir, { recursive: true }, () => {
+        clearTimeout(timer);
+        timer = setTimeout(go, 400);
+      });
+      console.log(`  watching ${p.dir}/`);
+    } catch (e) {
+      console.warn(`! can't watch ${p.dir}/ (${e.message}); restart npm run dev after changing it`);
+    }
+  }
+}

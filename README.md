@@ -18,15 +18,30 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 
 ### Useful URL options
 - `?debug`: shows the debug panel (seed, room, item, slot positions). You can also press the **`** key at any time.
-  - With the panel open, **N** generates a new random world and **S** skips to the next room.
+  - The panel lists what's in the current room (where each door leads, which are locked, which painting hides a key) and where every key is.
+  - With the panel open: **N** generates a new random level, **K** gives you every key, **B** jumps back to the first room.
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
 
-## How to play (prototype)
-- Move the mouse (or drag a finger) to aim the flashlight.
-- An item you can interact with glows when you point at it.
-- Click or tap the item. The flashlight flickers off, and in the next room another item appears somewhere else on the wall.
-- After the last item, a new set of rooms is generated.
+## How to play
+- Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
+- Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings).
+- Some doors are **locked**. Click a painting to look behind it: sometimes there's a key. Keys you hold appear at the top left, each with a small picture of the door it opens. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
+- Click the arrow at the bottom (**back**) to return to the room you came from.
+- One of the locked doors is the way out. Open it to escape, and a new level is generated.
+- The levels are always solvable: each key is found before the door it opens, in a room you can reach.
+
+### The maze settings
+`src/config.js` → `maze`:
+- `locks`: how many locked doors a level has (the last one is the exit).
+- `startDoors`, `doors`: doors in the first room, and in the other door rooms (`[2, 3]` = 2 or 3).
+- `paintings`: paintings in a painting room (`[1, 4]`).
+- `roomsPerStage`: how many new rooms each key opens up before the next locked door. Bigger = bigger maze.
+- `doorRoomChance`: how often a door leads to more doors rather than paintings.
+
+Doors and paintings are never repeated inside the same room.
+The messages ("It's locked.", ...) are at the top of `src/game.js`.
+Sounds for doors, keys and the back arrow are in `src/config.js` → `sfx`. They all use `keypress_01` until you have real ones.
 
 ## Publishing
 
@@ -38,7 +53,7 @@ Recommended settings: viewport 1280×720, enable "Mobile friendly" (landscape), 
 ## Adding art
 
 ### Rooms (backgrounds)
-- Render at **1920×1080**, export as **WebP**, and put it in `assets/rooms/`.
+- Render at **1920×1080**, export as **PNG** (or WebP), and put it in `art-src/rooms/`.
 - Rooms are only scenery. The player can't click them.
 - Register the room in `data/rooms.json` with the **slots** where items can go:
 
@@ -55,9 +70,12 @@ Recommended settings: viewport 1280×720, enable "Mobile friendly" (landscape), 
 `scale` (optional) shrinks or enlarges items in that spot, which is useful for perspective. `accepts` lists the kinds of items that can go there.
 
 ### Items
-- Render with a **transparent background** (Film → Transparent), crop to the object, and export as **WebP with alpha** into `assets/items/`.
+- Doors are items with `"placement": ["door"]` and go in `door` slots. Paintings use `"wall"`.
+- Doors are drawn flat on the wall, so all door slots in a room should sit on the same line (same `y`).
+- A painting room needs as many `wall` slots as the most paintings it can have (4), and they must not overlap.
+- Render with a **transparent background** (Film → Transparent), crop to the object, and export as **PNG with alpha** (or WebP) into `art-src/items/`.
 - Render them with the same camera and lens as the room so the perspective matches.
-- For the sharpest result, render items at the pixel size they will have on screen and set `"scale": 1`. The current paintings are 256 px and get enlarged ×1.4, so they look slightly soft.
+- Low-resolution art is fine: the PS1 look renders the whole screen at low resolution anyway (see below). Use `scale` in `items.json` to give every door or painting a sensible size.
 - Keep the lighting in the render flat or neutral. The game adds the flashlight on top.
 - Register the item in `data/items.json`:
 
@@ -66,6 +84,11 @@ Recommended settings: viewport 1280×720, enable "Mobile friendly" (landscape), 
 ```
 `depth` is how far the object sticks out from the wall. A bigger value gives a bigger, softer, more mobile shadow.
 `placement` must match a slot's `accepts`. Here, "wall" items only go in wall slots.
+
+### Where images go
+Put your source images in `art-src/` (PNG, JPG or WebP). `npm run dev` and `npm run build` turn them automatically into small WebP files in `assets/`, in the same folder structure: `art-src/items/door01.png` becomes `assets/items/door01.webp`. That `.webp` path is what you write in the `data/*.json` files.
+While `npm run dev` is running, a new or changed image (or sound) is converted within a second; just reload the page. Deleting a source also deletes its converted file. To redo every image, run `npm run images:force`.
+Don't put anything in `assets/` yourself: it is generated, not saved in git, and may be overwritten.
 
 File names are **case-sensitive** once online (`Painting01.webp` ≠ `painting01.webp`). `npm run build` warns you if a name doesn't match.
 
@@ -98,6 +121,12 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
 
 ## Tweaking the look
 All visual settings live in `src/config.js`, and you can change them freely:
+- `ps1`: the PlayStation 1 look. The game is drawn at a low resolution, then enlarged with hard pixels and reduced to PS1 colors with the console's checkerboard-like dithering.
+  - `width`: the internal resolution (480 = 480×270). Lower is crunchier (320 is very PS1); 640 is cleaner.
+  - `colorBits`: 5 is the PS1's color depth. Raise it to 8 to remove the color banding.
+  - `dither`: 0 to 1, how strong the dithering is.
+  - `snap`: objects move in whole big pixels, like on the PS1.
+  - `enabled: false` turns the whole effect off.
 - `flashlight`: beam size (`radius`), edge softness, how dark the darkness is (`ambient`), color tint, and how quickly the beam follows the pointer.
 - `shadow`: strength, blur, how far shadows move with the light.
 - `glow`: color, intensity, pulse.
@@ -105,4 +134,4 @@ All visual settings live in `src/config.js`, and you can change them freely:
 
 ## What's next
 - Developer tools for placing slots visually, and for designing levels and events.
-- Inventory, sound, multiple items per room, real puzzle logic.
+- Door/key/painting sounds, separate backgrounds for door rooms and painting rooms, a real ending.

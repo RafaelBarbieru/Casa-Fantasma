@@ -1,5 +1,6 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
-// Keys while visible: N = new random world, S = skip to next room, A = play a random ambience one-shot.
+// Keys while visible: N = new random world, K = take every key, B = jump back to the start room,
+// A = play a random ambience one-shot.
 export class Debug {
   constructor({ game, renderer, regenerate, playRandomAmbience }) {
     this.game = game;
@@ -18,14 +19,22 @@ export class Debug {
     addEventListener('keydown', (e) => {
       if (e.key === '`') { this.on = !this.on; this.refresh(); return; }
       if (!this.on) return;
-      if (e.key === 'n' || e.key === 'N') this.regenerate();
-      if (e.key === 'a' || e.key === 'A') console.info('[casa] ambience one-shot', this.playRandomAmbience?.());
-      if (e.key === 's' || e.key === 'S') {
-        const g = this.game;
-        g.enterRoom((g.roomIndex + 1) % g.world.rooms.length);
+      const g = this.game, k = e.key.toLowerCase();
+      if (k === 'n') this.regenerate();
+      if (k === 'a') console.info('[casa] ambience one-shot', this.playRandomAmbience?.());
+      if (k === 'k') {
+        g.keys = g.world.keys.map((_, i) => i).filter((i) => !g.unlocked.has(this.lockUid(i)));
+        this.refresh();
       }
+      if (k === 'b') g.enterRoom(0);
     });
     this.refresh();
+  }
+
+  // "room:item" uid of the door that key i opens.
+  lockUid(i) {
+    const k = this.game.world.keys[i];
+    return `${k.room}:${this.game.world.rooms[k.room].items.findIndex((it) => it.lock === i)}`;
   }
 
   tick(dt, rendered) {
@@ -40,15 +49,27 @@ export class Debug {
   }
 
   _text() {
-    const g = this.game, v = this.r.view, s = g.room?.spec;
-    this.el.textContent =
-      `seed ${g.world.seed}\n` +
-      `room ${g.roomIndex + 1}/${g.world.rooms.length}  ${s?.template}\n` +
-      `item ${s?.item} @ ${s?.slot}\n` +
-      `ambience ${g.world.ambience}\n` +
-      `render ${this.fps} fps (on demand)\n` +
-      `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}\n` +
-      `[\`] hide  [N] new world  [S] skip  [A] one-shot`;
+    const g = this.game, v = this.r.view, s = g.room?.spec, w = g.world;
+    const lines = [
+      `seed ${w.seed}`,
+      `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}`,
+    ];
+    for (const it of s?.items ?? []) {
+      let t = `  ${it.item} @ ${it.slot}`;
+      if (it.to !== undefined) t += it.to < 0 ? ' -> EXIT' : ` -> room ${it.to}`;
+      if (it.lock !== undefined) t += ` [lock ${it.lock}]`;
+      if (it.key !== undefined) t += ` {key ${it.key}}`;
+      lines.push(t);
+    }
+    w.keys.forEach((k, i) => lines.push(`  key ${i}: in room ${k.at}, opens ${k.door} in room ${k.room}`));
+    lines.push(
+      `held [${g.keys.join(', ')}]`,
+      `ambience ${w.ambience}`,
+      `render ${this.fps} fps (on demand)`,
+      `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
+      '[`] hide  [N] new world  [K] all keys  [B] start room  [A] one-shot',
+    );
+    this.el.textContent = lines.join('\n');
   }
 
   refresh() {
@@ -56,10 +77,11 @@ export class Debug {
     if (!this.on || !this.game.room) return;
     this._text();
     this.markers.textContent = '';
+    const used = new Set(this.game.room.spec.items.map((it) => it.slot));
     for (const slot of this.game.room.template.slots) {
       const p = this.r.sceneToCss(slot.x, slot.y);
       const m = document.createElement('div');
-      m.className = 'slot' + (slot.id === this.game.room.spec.slot ? ' used' : '');
+      m.className = 'slot' + (used.has(slot.id) ? ' used' : '');
       m.style.left = p.x + 'px';
       m.style.top = p.y + 'px';
       m.textContent = slot.id;

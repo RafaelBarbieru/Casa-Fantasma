@@ -5,6 +5,7 @@ import { generateWorld, seedFromUrl } from './world.js';
 import { attachInput } from './input.js';
 import { Game } from './game.js';
 import { Debug } from './debug.js';
+import { Hud } from './hud.js';
 import { loadSfx, unlockAudio, playSfx } from './audio.js';
 import { CONFIG } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience } from './ambience.js';
@@ -23,18 +24,19 @@ async function boot() {
   const db = await loadDB();
   const [assets] = await Promise.all([
     loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
-    loadSfx([...Object.values(CONFIG.sfx), ...CONFIG.ambience.random.pool]),
+    loadSfx([...new Set([...Object.values(CONFIG.sfx), ...CONFIG.ambience.random.pool])]),
   ]);
 
   const game = new Game({ db, assets });
-  const newWorld = (seed) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops });
+  const hud = new Hud(assets.sprites);
+  const newWorld = (seed) => generateWorld(seed, db, { ambience: CONFIG.ambience.loops, maze: CONFIG.maze });
   const regenerate = (seed) => {
     game.setWorld(newWorld(seed ?? (game.world.seed + 1) >>> 0));
     setLevelAmbience(game.world);
     wake();
   };
   game.onWorldEnd = () => regenerate();
-  game.onItemClick = () => playSfx(CONFIG.sfx.itemClick);
+  game.onSfx = (role) => CONFIG.sfx[role] && playSfx(CONFIG.sfx[role]);
   const debug = new Debug({ game, renderer, regenerate: () => regenerate((Math.random() * 2 ** 32) >>> 0), playRandomAmbience });
   game.onRoomChange = () => debug.refresh();
   game.setWorld(newWorld(seedFromUrl()));
@@ -49,7 +51,10 @@ async function boot() {
     last = t;
     const busy = game.update(dt);
     const draw = busy || dirty;
-    if (draw) renderer.draw(game.frame());
+    if (draw) {
+      hud.update(game.hudState());
+      renderer.draw(game.frame(), hud);
+    }
     dirty = false;
     debug.tick(dt, draw);
     if (busy || debug.on) raf = requestAnimationFrame(loop);
@@ -87,7 +92,7 @@ async function boot() {
     unlockAudio();
     startRandomAmbience();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
-    game.enterRoom(0); // restart flicker-in now that the player is looking
+    game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking
     wake();
   }, { once: true });
 }
