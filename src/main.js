@@ -13,6 +13,7 @@ import { CONFIG, atLevel } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience, startSilence, ambienceLoops, ambiencePool, setOutside } from './ambience.js';
 import { Menu } from './menu.js';
 import { settings, loadSettings } from './settings.js';
+import { L, applyDom } from './i18n.js';
 
 const canvas = document.getElementById('c');
 const overlay = document.getElementById('overlay');
@@ -20,17 +21,20 @@ const status = document.getElementById('status');
 
 loadSettings();
 setVolumes(settings);
+// ?lang=es: play in that language (it is saved along with the settings the next time an option changes).
+settings.lang = new URLSearchParams(location.search).get('lang') ?? settings.lang;
+applyDom();
 
 async function boot() {
   const renderer = Renderer.create(canvas);
   if (!renderer) {
-    status.textContent = 'This browser does not support WebGL.';
+    status.textContent = L().dom.noWebgl;
     return;
   }
 
   const [db] = await Promise.all([loadDB(), loadAudioIndex()]);
   const [assets] = await Promise.all([
-    loadAssets(db, (p) => (status.textContent = `Loading ${Math.round(p * 100)}%`)),
+    loadAssets(db, (p) => (status.textContent = L().dom.loadingPct(Math.round(p * 100)))),
     initSfx(),
     loadSfx(ambiencePool()),
   ]);
@@ -92,7 +96,7 @@ async function boot() {
     w: hud.w, h: hud.h,
     art: { wall: assets.surfaces.get('wall02'), floor: assets.surfaces.get('floor01') }, // tutorial pictures
     onSfx: (role) => playRole(role),
-    onChange: () => { setVolumes(settings); wake(); },
+    onChange: () => { setVolumes(settings); applyDom(); wake(); },
     onStart: () => {
       started = true;
       game.run.at = performance.now(); // the run's clock starts now, not when the menu came up
@@ -228,7 +232,7 @@ async function boot() {
   });
 
   // Click/tap to start: gives us a user gesture (needed later for audio + fullscreen on mobile).
-  status.textContent = matchMedia('(pointer: coarse)').matches ? 'Tap to enter' : 'Click to enter';
+  status.textContent = matchMedia('(pointer: coarse)').matches ? L().dom.tapToEnter : L().dom.clickToEnter;
   overlay.classList.add('ready');
   overlay.addEventListener('pointerdown', () => {
     overlay.classList.add('hidden');
@@ -241,5 +245,5 @@ async function boot() {
 
 boot().catch((e) => {
   console.error(e);
-  status.textContent = 'Failed to start: ' + e.message;
+  status.textContent = L().dom.failed(e.message);
 });

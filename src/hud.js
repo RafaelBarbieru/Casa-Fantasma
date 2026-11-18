@@ -1,8 +1,10 @@
 // HUD drawn into a small 2D canvas the size of the PS1 framebuffer, then composited by the renderer with
-// nearest filtering. Text uses a built-in 5x7 pixel font (uppercase only), so no font files are needed.
+// nearest filtering. Text uses a built-in 5x7 pixel font (uppercase only, plus the Spanish accented capitals and
+// ¿ ¡), so no font files are needed. A locale's letters need glyphs here or they are skipped.
 // `version` bumps whenever the canvas changes, so the renderer only re-uploads the texture then.
 import { CONFIG } from './config.js';
 import { settings } from './settings.js';
+import { L } from './i18n.js';
 
 // 5x7 glyphs, rows top -> bottom, '1' = ink.
 const GLYPHS = {
@@ -31,9 +33,16 @@ const GLYPHS = {
   '%': '11001 11010 00010 00100 01000 01011 10011', '<': '00010 00100 01000 10000 01000 00100 00010',
   '>': '01000 00100 00010 00001 00010 00100 01000',
   '(': '00010 00100 01000 01000 01000 00100 00010', ')': '01000 00100 00010 00010 00010 00100 01000',
+  // Spanish: the full letter with its accent ABOVE the line (glyphs taller than 7 rows: the extra rows are drawn above
+  // y), so they still read as capitals. Lines are LINE px apart, so the mark sits in the gap between lines.
+  'Á': '00010 00100 00000 01110 10001 10001 11111 10001 10001 10001', 'É': '00010 00100 00000 11111 10000 10000 11110 10000 10000 11111',
+  'Í': '00010 00100 00000 01110 00100 00100 00100 00100 00100 01110', 'Ó': '00010 00100 00000 01110 10001 10001 10001 10001 10001 01110',
+  'Ú': '00010 00100 00000 10001 10001 10001 10001 10001 10001 01110', 'Ü': '00000 01010 00000 10001 10001 10001 10001 10001 10001 01110',
+  'Ñ': '01101 10110 00000 10001 10001 11001 10101 10011 10001 10001',
+  '¿': '00100 00000 00100 01000 10000 10001 01110', '¡': '00100 00000 00100 00100 00100 00100 00100',
 };
 const FONT = Object.fromEntries(Object.entries(GLYPHS).map(([c, s]) => [c, s.split(' ')]));
-const ADV = 6, LINE = 9;
+const ADV = 6, LINE = 11;
 
 export const KEY_ICON = ['01110000', '10001111', '10001011', '01110000'];
 
@@ -67,9 +76,10 @@ export class Hud {
       for (let i = 0; i < s.length; i++) {
         const g = FONT[s[i]];
         if (!g) continue;
-        for (let r = 0; r < 7; r++)
+        const top = g.length - 7; // rows above the line (accents)
+        for (let r = 0; r < g.length; r++)
           for (let k = 0; k < 5; k++)
-            if (g[r][k] === '1') c.fillRect(x + (i * ADV + k) * scale + o, y + r * scale + o, scale, scale);
+            if (g[r][k] === '1') c.fillRect(x + (i * ADV + k) * scale + o, y + (r - top) * scale + o, scale, scale);
       }
     }
   }
@@ -121,7 +131,7 @@ export class Hud {
 
     // Current level (top centre).
     if (st.level) {
-      const s = 'LEVEL ' + st.level, lw = textWidth(s), p = CONFIG.hud.level;
+      const s = L().hud.level(st.level), lw = textWidth(s), p = CONFIG.hud.level;
       const x0 = this.sx(p.x) - (lw >> 1), y0 = this.sy(p.y) - 3;
       c.fillStyle = 'rgba(0,0,0,0.55)';
       c.fillRect(x0 - 4, y0 - 3, lw + 8, 13);
@@ -148,7 +158,7 @@ export class Hud {
       c.fillRect(x0 - 3, cy - (sz >> 1) - 2, sz + 3 + lw + 6, sz + 4);
       c.drawImage(pillSp.canvas, pillSp.ox, pillSp.oy, pillSp.w, pillSp.h, x0, cy - (sz >> 1), sz, sz);
       this.text(label, x0 + sz + 3, cy - 3, st.pillHover ? '#e8dcc0' : '#a89c84');
-      if (st.pillHover) this.text('USE', cx - (textWidth('USE') >> 1), cy + (sz >> 1) + 4, '#e8dcc0');
+      if (st.pillHover) this.text(L().hud.use, cx - (textWidth(L().hud.use) >> 1), cy + (sz >> 1) + 4, '#e8dcc0');
     }
 
     // Back arrow (a down chevron) at the bottom.
@@ -160,7 +170,7 @@ export class Hud {
         c.fillRect(cx - 7 + r, cy - 4 + r, 2, 1);
         c.fillRect(cx + 5 - r, cy - 4 + r, 2, 1);
       }
-      if (st.backHover) this.text('BACK', cx - (textWidth('BACK') >> 1), cy - 15, '#e8dcc0');
+      if (st.backHover) this.text(L().hud.back, cx - (textWidth(L().hud.back) >> 1), cy - 15, '#e8dcc0');
     }
 
     if (st.message) {

@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Visible text: src/locales/*.js `dom` (data-i18n keys; main.js applyDom). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -49,14 +50,14 @@
 <body>
 <canvas id="c"></canvas>
 <div id="overlay">
-  <div id="status">Loading</div>
+  <div id="status" data-i18n="loading">Loading</div>
   <div id="warning">
-    <h2>Warning</h2>
-    <p>This game contains loud noises, sudden screams and flickering, flashing lights, which may trigger seizures in people with photosensitive epilepsy.</p>
-    <p>Flickering lights can be turned off in Options &gt; Game &gt; Epilepsy mode.</p>
+    <h2 data-i18n="warningTitle">Warning</h2>
+    <p data-i18n="warning1">This game contains loud noises, sudden screams and flickering, flashing lights, which may trigger seizures in people with photosensitive epilepsy.</p>
+    <p data-i18n="warning2">Flickering lights can be turned off in Options &gt; Game &gt; Epilepsy mode.</p>
   </div>
 </div>
-<div id="rotate">Rotate your device</div>
+<div id="rotate" data-i18n="rotate">Rotate your device</div>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

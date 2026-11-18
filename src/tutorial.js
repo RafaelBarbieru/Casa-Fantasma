@@ -1,9 +1,10 @@
-// How to play (main menu): one entry per page = title, paragraphs, and a picture drawn into a framed panel on the right
+// How to play (main menu): one entry per page = id (its title + paragraphs are src/locales/*.js tutorial[id]) and a
+// picture drawn into a framed panel on the right
 // with the game's own art (sprites by id from data/items.json + ghosts.json, a wall and floor texture). Everything is
 // drawn into the HUD canvas, so it gets the same PS1 colour reduction as the game.
-// Pixel font: letters, digits and . , ' ! ? - : / % < > only.
 import { KEY_ICON } from './hud.js';
 import { CONFIG } from './config.js';
+import { L } from './i18n.js';
 
 export const PANEL = { x: 300, y: 44, w: 152, h: 160 }; // HUD px
 
@@ -114,12 +115,7 @@ function lever(k, cx, cy, h, down, o = {}) {
 // --- the pages ------------------------------------------------------------------------------------------------
 export const TUTORIAL = [
   {
-    title: 'THE HOUSE',
-    text: [
-      'Every level is a maze of rooms. One door in each level is the master door: find its gold key and go through. There is no way back.',
-      'Other doors may be locked too. Their keys are hidden somewhere in the level.',
-      'Keys you hold are shown at the top left, next to a picture of the door they open.',
-    ],
+    id: 'house',
     draw(k) {
       const { P } = k, fy = room(k), cx = P.x + P.w / 2;
       sprite(k, 'door07', cx, fy - 44, 88, { glow: WARM, blur: 10 });
@@ -128,13 +124,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'CONTROLS',
-    text: [
-      'Move the mouse, or drag a finger, to aim your flashlight. Anything you can use glows when you point at it. Click or tap to use it.',
-      'To go back to the room you came from, click the arrow at the bottom or press SPACE.',
-      'A warm glow means there is still something to interact with. A dull blue glow means there is nothing left.',
-      'Press ESC or the pause button at the top right to pause the game.',
-    ],
+    id: 'controls',
     draw(k) {
       const { c, P, hud } = k, h = 108, fy = room(k, h, 86), x1 = P.x + P.w * 0.3, x2 = P.x + P.w * 0.7;
       sprite(k, 'door03', x1, fy - 31, 62, { glow: WARM, blur: 9 });
@@ -148,18 +138,15 @@ export const TUTORIAL = [
         c.fillRect(P.x + 14 + r, y + r, 2, 1);
         c.fillRect(P.x + 26 - r, y + r, 2, 1);
       }
-      hud.text('BACK: SPACE', P.x + 40, y, '#a89c84');
+      hud.text(L().tutorial.controls.backKey, P.x + 40, y, '#a89c84');
       const py = y + 18;
       c.fillRect(P.x + 16, py - 1, 3, 9);
       c.fillRect(P.x + 22, py - 1, 3, 9);
-      hud.text('PAUSE: ESC', P.x + 40, py, '#a89c84');
+      hud.text(L().tutorial.controls.pauseKey, P.x + 40, py, '#a89c84');
     },
   },
   {
-    title: 'PAINTINGS',
-    text: [
-      'Click a painting to move it and uncover what it hides behind it.'
-    ],
+    id: 'paintings',
     draw(k) {
       room(k);
       const { c, P } = k, h = 66, w = widthOf(k, 'painting02', h);
@@ -174,11 +161,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'POSTERS',
-    text: [
-      'Posters have to be torn off the wall. Every click scratches a piece away.',
-      'Items under a poster can be taken as soon as it is uncovered, but the room won\'t appear completed until you scratch the entire poster.',
-    ],
+    id: 'posters',
     draw(k) {
       const { c, P } = k, h = 96, sp = k.sprites.get('poster01');
       room(k);
@@ -212,12 +195,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'DARK ROOMS',
-    text: [
-      'In some rooms your flashlight dies the moment you walk in.',
-      "Search the walls for the light switch. You can't see it, but it glows when you point at it. Nothing else in the room can be used until the light is on.",
-      'Dark rooms may contain important items or a passage to the master door. Running from all of them can cost you the way out.',
-    ],
+    id: 'dark',
     draw(k) {
       const { c, P } = k, fy = room(k);
       sprite(k, 'door02', P.x + 34, fy - 40, 80);
@@ -230,13 +208,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'LEVERS',
-    text: [
-      'A level may have a room with one door and a row of levers. All the levers start up.',
-      'The door only opens with the levers set the right way: some up, some down.',
-      'Click a lever to flip it, then try the door. If it is wrong, every lever snaps back up.',
-      'Get it right and the door opens. The right way may be painted on a wall, behind a painting or a poster.',
-    ],
+    id: 'levers',
     draw(k) {
       // A door on the left, the levers set up, down, down, down, up; the pointer on the last (glowing) one.
       const { c, P } = k, fy = room(k), ly = fy - 58, combo = [0, 1, 1, 1, 0], lx = (i) => P.x + 52 + i * 22;
@@ -247,11 +219,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'GHOSTS',
-    text: [
-      'Some doors lead to a pitch black room with a ghost in it. The ghost is always there: remember the door and stay away.',
-      'A ghost can appear in any room at any time. When your light dies and a face appears, get out: go back or through another door.'
-    ],
+    id: 'ghosts',
     draw(k) {
       const { c, P } = k;
       c.fillStyle = '#000';
@@ -261,12 +229,7 @@ export const TUTORIAL = [
     },
   },
   {
-    title: 'HEALTH',
-    text: [
-      'Your heart is at the bottom left. It drains while a ghost is near, and it does not heal on its own. Listen to it beat.',
-      'Pills you find are kept at the top right. Click them to take one and heal. Health and pills carry over to the next level.',
-      'If your heart stops, you are sent back to the main menu and start again from level 1.',
-    ],
+    id: 'health',
     draw(k) {
       const { c, P, hud } = k;
       room(k);

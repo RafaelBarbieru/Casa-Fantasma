@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 import { textWidth } from './hud.js';
 import { settings, saveSettings } from './settings.js';
 import { TUTORIAL, PANEL } from './tutorial.js';
+import { L, cycleLang } from './i18n.js';
 
 const C = {
   title: '#c9b48a', titleShadow: '#4a0d08', head: '#8a3a2a', idle: '#7d7462', hot: '#e8dcc0', body: '#a89c84',
@@ -15,19 +16,22 @@ const SEGS = 20, SEG_W = 6;               // slider: 20 blocks, 5% each
 const LX = 110, CX = 230, ROW_X0 = 96, ROW_X1 = 392; // options rows: label x, control x, hit area (HUD px)
 const TEXT_X = 26, PARA = 6;              // How to play: text column left edge and gap between paragraphs (HUD px)
 const TEXT_W = PANEL.x - 12 - TEXT_X;     // ...and its wrap width (the picture panel is on the right)
+const LINE_H = 11;                        // ...and its line pitch (room for accents above capitals)
 
 const STATS_LX = 60, STATS_VX = 270;    // stats screen: label and value columns (HUD px)
 
 const button = (id, label, y, extra) => ({ id, kind: 'button', label, y, ...extra });
 
 // The stats screen's verdict on the pills you took (grams; held = pills still in your pocket, died = true if dead).
+// The lines are src/locales/*.js menu.jokes.
 export function pillJoke(grams, held, died) {
-  if (!grams && died && held) return `Died with ${held} in your pocket. Saving them for later?`;
-  if (!grams) return 'Not a single one. Very brave, or very stupid.';
-  if (grams <= 2) return 'A responsible adult. Your doctor is proud.';
-  if (grams <= 5) return 'The recommended dose. More or less.';
-  if (grams <= 9) return 'Your pharmacist knows you by name.';
-  return 'Hypochondriac. Ghosts are not contagious.';
+  const J = L().menu.jokes;
+  if (!grams && died && held) return J.diedHolding(held);
+  if (!grams) return J.none;
+  if (grams <= 2) return J.few;
+  if (grams <= 5) return J.dose;
+  if (grams <= 9) return J.many;
+  return J.lots;
 }
 
 export class Menu {
@@ -62,28 +66,31 @@ export class Menu {
 
   // --- layout + hit testing (HUD px) ---------------------------------------
   // Every widget on the current page; y = top of its text.
+  // Labels come from the current locale (src/locales/*.js menu).
   layout() {
+    const T = L().menu;
     switch (this.page) {
-      case 'main': return [button('start', 'START', 140), button('tutorial', 'HOW TO PLAY', 166), button('options', 'OPTIONS', 192)];
+      case 'main': return [button('start', T.start, 140), button('tutorial', T.howToPlay, 166), button('options', T.options, 192)];
       case 'pause': return [
-        button('resume', 'RESUME', 140), button('options', 'OPTIONS', 166),
-        button('quit', 'QUIT', 192, { hint: 'BACK TO THE MAIN MENU. THIS RUN WILL BE LOST.' }),
+        button('resume', T.resume, 140), button('options', T.options, 166),
+        button('quit', T.quit, 192, { hint: T.quitHint }),
       ];
       case 'options': return [
-        { kind: 'header', label: 'AUDIO', y: 58 },
-        { id: 'master', kind: 'slider', label: 'MASTER', y: 76 },
-        { id: 'ambience', kind: 'slider', label: 'AMBIENCE', y: 94 },
-        { id: 'sfx', kind: 'slider', label: 'SFX', y: 112 },
-        { kind: 'header', label: 'GAME', y: 140 },
-        { id: 'epilepsy', kind: 'toggle', label: 'EPILEPSY MODE', y: 158, hint: 'NO FLICKERING OR FLASHING LIGHTS' },
-        button('back', 'BACK', 200),
+        { kind: 'header', label: T.audio, y: 58 },
+        { id: 'master', kind: 'slider', label: T.master, y: 76 },
+        { id: 'ambience', kind: 'slider', label: T.ambience, y: 94 },
+        { id: 'sfx', kind: 'slider', label: T.sfx, y: 112 },
+        { kind: 'header', label: T.game, y: 140 },
+        { id: 'epilepsy', kind: 'toggle', label: T.epilepsy, y: 158, hint: T.epilepsyHint },
+        { id: 'lang', kind: 'choice', label: T.language, y: 176 },
+        button('back', T.back, 206),
       ];
       case 'tutorial': return [
         this.tut > 0 && button('prev', '<', 236, { x: 150 }),
-        button('back', 'BACK', 236),
+        button('back', T.back, 236),
         this.tut < TUTORIAL.length - 1 && button('next', '>', 236, { x: 330 }),
       ].filter(Boolean);
-      case 'stats': return [button('menu', 'MAIN MENU', 222)];
+      case 'stats': return [button('menu', T.mainMenu, 222)];
     }
     return [];
   }
@@ -165,7 +172,14 @@ export class Menu {
       settings[it.id] = !settings[it.id];
       saveSettings();
       this.onChange();
-    }
+    } else if (it.kind === 'choice') this.cycle(it, 1);
+  }
+
+  // Options > Language: the next (d = 1) or previous (d = -1) locale.
+  cycle(it, d) {
+    settings[it.id] = cycleLang(d);
+    saveSettings();
+    this.onChange();
   }
 
   // How to play: turn the page. Keeps the arrow selected while there is another page that way, else BACK.
@@ -209,6 +223,9 @@ export class Menu {
       }
     } else if (horiz && cur?.kind === 'toggle') {
       this.activate(cur);
+    } else if (horiz && cur?.kind === 'choice') {
+      this.onSfx('uiSelect');
+      this.cycle(cur, horiz);
     } else if (k === 'Enter' || k === 'NumpadEnter' || k === 'Space') {
       if (cur && cur.kind !== 'slider' && !e.repeat) this.activate(cur);
     } else if (k === 'Escape' || k === 'Backspace') {
@@ -238,34 +255,37 @@ export class Menu {
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
 
+    const T = L().menu;
     const center = (s, y, color, scale, shadow) => hud.text(s, (W - textWidth(s, scale)) >> 1, y, color, scale, shadow);
-    if (this.page === 'main') center('CASA FANTASMA', 60, C.title, 3, C.titleShadow);
-    else if (this.page === 'pause') center('PAUSED', 60, C.title, 3, C.titleShadow);
-    else if (this.page === 'options') center('OPTIONS', 22, C.title, 2, C.titleShadow);
+    if (this.page === 'main') center(T.title, 60, C.title, 3, C.titleShadow);
+    else if (this.page === 'pause') center(T.paused, 60, C.title, 3, C.titleShadow);
+    else if (this.page === 'options') center(T.options, 22, C.title, 2, C.titleShadow);
     else if (this.page === 'stats') {
       const S = this.stats, sec = Math.round(S.ms / 1000);
-      center(S.escaped ? 'YOU GOT OUT' : 'YOU DIED', 34, C.title, 3, C.titleShadow);
+      center(S.escaped ? T.gotOut : T.died, 34, C.title, 3, C.titleShadow);
       const rows = [
-        ['TIME', `${Math.floor(sec / 60)} MIN ${String(sec % 60).padStart(2, '0')} S`],
-        ['LEVEL', `${S.level} OF ${S.levels}`],
-        ['GHOSTS ESCAPED', String(S.ghosts)],
-        ['PILLS INGESTED', `${S.grams} ${S.grams === 1 ? 'GRAM' : 'GRAMS'}`],
+        [T.time, T.timeValue(Math.floor(sec / 60), String(sec % 60).padStart(2, '0'))],
+        [T.level, T.levelValue(S.level, S.levels)],
+        [T.ghosts, String(S.ghosts)],
+        [T.pills, T.grams(S.grams)],
       ];
+      // Values start at STATS_VX, or further right when a (translated) label is longer.
+      const vx = Math.max(STATS_VX, STATS_LX + Math.max(...rows.map(([l]) => textWidth(l, 2))) + 18);
       rows.forEach(([label, value], i) => {
         const y = 84 + i * 24;
         hud.text(label, STATS_LX, y, C.idle, 2);
-        hud.text(value, STATS_VX, y, C.hot, 2);
+        hud.text(value, vx, y, C.hot, 2);
       });
       center(`(${pillJoke(S.grams, S.held, !S.escaped)})`, 84 + 3 * 24 + 22, C.body, 1);
     }
     else if (this.page === 'tutorial') {
-      const page = TUTORIAL[this.tut], P = PANEL;
-      center(page.title, 18, C.title, 2, C.titleShadow);
+      const page = TUTORIAL[this.tut], P = PANEL, words = L().tutorial[page.id];
+      center(words.title, 18, C.title, 2, C.titleShadow);
       let y = P.y;
-      for (const p of page.text) {
+      for (const p of words.text) {
         for (const line of hud.wrap(p.toUpperCase(), TEXT_W)) {
           hud.text(line, TEXT_X, y, C.body);
-          y += 10;
+          y += LINE_H;
         }
         y += PARA;
       }
@@ -309,7 +329,9 @@ export class Menu {
         hud.text(Math.round(v * 100) + '%', CX + SEGS * SEG_W + 8, it.y, hot ? C.hot : C.idle);
       } else if (it.kind === 'toggle') {
         const on = settings[it.id];
-        hud.text(on ? '< ON >' : '< OFF >', CX, it.y, on ? (hot ? C.hot : C.segOn) : (hot ? C.segIdle : C.hint));
+        hud.text(`< ${on ? T.on : T.off} >`, CX, it.y, on ? (hot ? C.hot : C.segOn) : (hot ? C.segIdle : C.hint));
+      } else if (it.kind === 'choice') {
+        hud.text(`< ${L().name} >`, CX, it.y, hot ? C.hot : C.segOn);
       }
     }
 

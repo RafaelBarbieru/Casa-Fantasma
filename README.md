@@ -21,6 +21,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - The panel lists what's in the current room (where each door leads, which are locked, which painting hides a key) and where every key is.
   - With the panel open: **N** generates a new random level, **K** gives you every key, **B** jumps back to the first room.
   - Ghost testing: **G** makes a ghost appear in the current room, **D** takes away 20% health, **H** restores full health, **P** gives you a pill. The panel shows your hidden health and which rooms hide pills (`{pill}` next to the painting).
+- `?lang=es` (or `?lang=en`): plays in that language.
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
 
@@ -28,15 +29,21 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 The "Click to enter" screen also shows a warning about loud noises and flickering lights, and points to the Epilepsy mode option.
 
 After "Click to enter", the main menu appears over the dimmed first room (the ambience is already playing, and the flashlight follows the pointer behind the menu).
-- **START** begins level 1. **HOW TO PLAY** is a short tutorial (8 pages: the goal, controls, paintings, posters, dark rooms, levers, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a door with a row of levers, a ghost, the heart and pills). Text and pictures are in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `door09`, `lever_base`, `lever_handle`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
+- **START** begins level 1. **HOW TO PLAY** is a short tutorial (8 pages: the goal, controls, paintings, posters, dark rooms, levers, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a door with a row of levers, a ghost, the heart and pills). The text is in `src/locales/` (`tutorial`) and the pictures in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `door09`, `lever_base`, `lever_handle`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
   - **Audio:** volume sliders for **Master** (everything), **Ambience** (the level loop and the random ambience sounds) and **SFX** (every other sound, including the menu's). Click or drag along a slider; it moves in 5% steps.
   - **Game → Epilepsy mode:** no flickering or flashing light. The flashlight and the ceiling lights fade instead of flickering, ghosts don't shimmer, screamers appear as a still image (no flashing or shaking), and the red screen edge and the heart don't throb with the heartbeat (the heart still jumps).
+  - **Game → Language:** English or Español. The first time, the game picks the browser's language (Spanish browsers get Spanish, anything else English).
 - Settings are saved in the browser and remembered next time.
 - Keyboard: arrow keys (or WASD) move and change values (and turn the tutorial's pages), **Enter** or **Space** clicks, **Escape** goes back.
 - **Pause menu:** press **Escape** or click the pause button at the top right during the game (switching to another tab or app also pauses). It has **RESUME**, **OPTIONS** and **QUIT** (back to the main menu; the run is lost and the next START is a new level 1). The game is frozen while paused, ghosts included. The tutorial is only in the main menu.
-- **Stats screen:** when a run ends (you die, or you get out of level 10) a screen shows how long the run took, the level you reached, how many ghosts you escaped (leaving a room with a ghost in it, once per ghost per room) and how many grams of pills you took (1 pill = 1 gram), with a joke about the pills. **MAIN MENU** (or Enter / Escape) goes to the main menu. QUIT from the pause menu skips it. Paused time does not count. The jokes are in `pillJoke()` at the top of `src/menu.js`.
+- **Stats screen:** when a run ends (you die, or you get out of level 10) a screen shows how long the run took, the level you reached, how many ghosts you escaped (leaving a room with a ghost in it, once per ghost per room) and how many grams of pills you took (1 pill = 1 gram), with a joke about the pills. **MAIN MENU** (or Enter / Escape) goes to the main menu. QUIT from the pause menu skips it. Paused time does not count. The jokes are in `src/locales/` (`jokes`); which one shows is decided in `pillJoke()` at the top of `src/menu.js`.
 - Sounds: `sfx/ui_select` when you point at an option, `sfx/ui_submit` (one at random) when you click one. Both are always converted to mono.
 - The menu's look (colours, positions) is at the top of `src/menu.js`.
+
+## Languages and text
+Every piece of text the player sees (start screen, messages, menus, tutorial, stats jokes) is in `src/locales/`: `en.js` (English) and `es.js` (Spanish). To change a line, edit it in both files. Lists like `locked: [...]` are alternatives picked at random, so you can add or remove lines freely.
+
+To add a language: copy `en.js` to e.g. `fr.js`, translate the text (keep the left-hand names like `locked:` as they are), and ask for it to be added to the language list. Anything left untranslated shows in English. The in-game pixel font only has capital letters, digits, common punctuation and the Spanish accented letters (Á É Í Ó Ú Ü Ñ ¿ ¡); other letters need new glyphs.
 
 ## How to play
 - The current level is shown at the top of the screen, and the pause button at the top right (`hud.level` and `hud.pause` in `src/config.js` set their positions; the pills moved a little to the left to make room).

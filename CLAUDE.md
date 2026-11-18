@@ -43,8 +43,10 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 ```
 index.html          canvas, start overlay, rotate hint, debug CSS
 src/menu.js         menus: main (START / HOW TO PLAY / OPTIONS), pause (RESUME / OPTIONS / QUIT), Options (sliders, epilepsy toggle; BACK -> `from`), tutorial (main only; pages in src/tutorial.js), stats (`showStats`, after death / last level; MAIN MENU -> main; `pillJoke`), drawn into the HUD canvas with the pixel font (hud.sig 'menu…'); pointer + keyboard; shown after the start overlay, START -> levelStart, heartbeat, random ambience, enterRoom
-src/tutorial.js     TUTORIAL pages { title, text[], draw(k) }: pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip/lever
-src/settings.js     `settings` {master, ambience, sfx, epilepsy} + load/save (localStorage, guarded so Node imports work). game.js/hud.js read settings.epilepsy
+src/tutorial.js     TUTORIAL pages { id, draw(k) } (title + text from L().tutorial[id]): pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip/lever
+src/i18n.js         locale system: `L()` = current locale (settings.lang, else browser language, else en; missing keys fall back to en), `LANGS`, `cycleLang(d)`, `applyDom()` ([data-i18n] in index.html). No DOM deps except applyDom
+src/locales/*.js    ALL player-facing text (en.js = reference shape, es.js): dom (overlay), game (messages), hud, menu (incl. pill jokes), tutorial[pageId]. Never hard-code player text elsewhere
+src/settings.js     `settings` {master, ambience, sfx, epilepsy, lang} + load/save (localStorage, guarded so Node imports work). game.js/hud.js read settings.epilepsy
 src/main.js         boot, on-demand rAF loop (wake()), resize, input wiring, world regeneration
 src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf caps)
 src/renderer.js     WebGL1: 2 programs (bg, item), 1 unit quad VBO, texture cache (WeakMap by source), letterbox view, context-loss restore
@@ -52,7 +54,7 @@ src/shaders.js      GLSL. lightAt() = flashlight mask, evaluated per fragment in
 src/game.js         state: room, inventory (keys/unlocked/searched/lit), light + ceiling light, per-item hover/glow, transitions ('in'|'idle'|'out'|'end'), door/painting/back taps (back() is also bound to Space in main.js), hudState(), frame() -> draw list
 src/heartbeat.js    health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat; beatEnvelope(now) -> 0..1 for the HUD heart
 src/sfx.js          sound roles: CONFIG.sfx prefix -> random pool from assets/audio/index.json, preload modes, playRole()
-src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font, typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change
+src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font (+ Spanish Á É Í Ó Ú Ü Ñ ¿ ¡; glyphs with >7 rows draw the extra rows ABOVE y, so text lines are 11 px apart), typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change
 src/input.js        Pointer Events -> move/down/up/tap/leave in scene coords. Touch moves the light only while the finger is down
 src/world.js        generateWorld(seed, db, {ambience, maze}): pure, seeded lock-and-key maze (format documented at the top). Reusable by a future editor
 src/rng.js          mulberry32
@@ -105,6 +107,7 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - index.html overlay: "Click to enter" + loud-noise/epilepsy warning (#warning).
 - Overlay tap -> unlockAudio (ambience bed starts) + `menu.show()`. While `menu.open`, main routes input/keys to the menu and draws `menu.draw(hud)` instead of `hud.update`; leaving resets `hud.sig`. Before START (`started` false) the game keeps updating and the light follows the pointer (`aim`).
 - Pause (`started && menu.open`): Esc, the HUD pause button (`CONFIG.hud.pause`, hit-tested in main.js, not game.js; hover via `hudState + pause`), or the tab going hidden. game.update is skipped; RESUME calls `game.shiftClock(pausedMs)` (spawnAt + lingering goneAt are wall-clock). Heartbeat's getHealth returns null while a menu is open. QUIT -> `newRun(false)` (no levelStart sound) + main menu.
+- Language: Options > LANGUAGE (`kind: 'choice'`, cycles `LANGS`), saved as `settings.lang`; `?lang=es` forces one. Game messages are resolved when said, so a message on screen keeps its language.
 - `settings.epilepsy`: `flickerIn` -> plain ramp, `dying` -> linear fade, `screamerOverlay` -> steady slow zoom, ghost `fx` opacity steady, HUD vignette throb + heart flush off. Any new flicker must check it.
 - HUD level label: `hudState().level` (null in 'end'/'dead'), at `CONFIG.hud.level`.
 

@@ -5,6 +5,7 @@ import { CONFIG, atLevel } from './config.js';
 import { EXIT } from './world.js';
 import { settings } from './settings.js';
 import { clueId } from './assets.js';
+import { L } from './i18n.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const pickText = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -33,32 +34,8 @@ const tearOf = (R) => R.reach * (1 - R.hp / R.max); // threshold after the scrat
 const lootId = (e) => (e.key !== undefined ? (e.key === 0 ? 'master_key' : 'key') : e.pill ? 'health' : null);
 const hiddenId = (e) => lootId(e) ?? (e.clue ? clueId(e.clue) : null);
 
-const TEXT = {
-  locked: ["It's locked.", 'The door is locked.', "It won't open."],
-  lockedHint: ['Locked. You have a key, but not for this door.'],
-  unlock: ['The key turns. The door opens.'],
-  unlockMaster: ['The key turns. There is no way back.'],
-  lootFound: ['Something was hidden behind the painting.', 'There is something behind it.'],
-  posterLoot: ['Something was hidden under the poster.', 'There is something under the paper.'],
-  clueFound: ['Arrows are painted on the wall behind it.', 'Someone painted arrows on the wall.'],
-  clueUnder: ['There are arrows painted under the poster.', 'Someone painted arrows under the paper.'],
-  posterNothing: ['Nothing under it.', 'Only bare wall underneath.'],
-  torn: ['There is nothing left to tear.', 'Only scraps are left.'],
-  nothing: ['Nothing behind it.', 'Only dust behind the frame.', 'Nothing.'],
-  fell: ['The painting crashes to the floor.', 'It falls and cracks.'],
-  searched: ['You already looked behind this one.'],
-  lootLeft: ['Something is still there, on the wall.'],
-  keyTaken: ['You take the key.'],
-  masterTaken: ['You take the key. It is heavy, and gold.'],
-  pillTaken: ['You take the pills.'],
-  healed: ['You swallow a pill. You feel better.'],
-  leverWrong: ['Nothing happens. The levers snap back up.', 'The door does not budge. The levers spring back.'],
-  leverRight: ['Something clicks inside the door.', 'The levers lock in place. The door opens.'],
-  leversStuck: ["The levers won't move any more."],
-  dark: ["It's too dark to see anything.", 'There must be a light switch somewhere.', 'You feel along the wall.'],
-  level: (n) => `Level ${n}`,
-  escaped: 'You got out.',
-};
+// Player-facing text: src/locales/*.js `game` (i18n.js).
+const TEXT = () => L().game;
 
 export const floorLineY = () => CONFIG.sceneH * CONFIG.room.floorLine;
 
@@ -607,7 +584,7 @@ export class Game {
       if (loot) this.room.loot.push(loot);
     }
     const R = it.rip, hidden = lootId(it.e) && !this.taken.has(it.uid), clue = !!it.e.clue;
-    if (R.hp <= 0) return void this.say(pickText(hidden ? TEXT.lootLeft : TEXT.torn));
+    if (R.hp <= 0) return void this.say(pickText(hidden ? TEXT().lootLeft : TEXT().torn));
     const covered = tearOf(R) < R.need;
     R.hp--;
     it.shake = Math.max(it.shake, CONFIG.posters.shake);
@@ -616,8 +593,8 @@ export class Game {
       this.markExplored();
       this.onSfx?.('posterTear');
     } else this.onSfx?.('posterScratch');
-    if ((hidden || clue) && covered && tearOf(R) >= R.need) this.say(pickText(clue ? TEXT.clueUnder : TEXT.posterLoot));
-    else if (R.hp === 0 && !hidden && !clue) this.say(pickText(TEXT.posterNothing));
+    if ((hidden || clue) && covered && tearOf(R) >= R.need) this.say(pickText(clue ? TEXT().clueUnder : TEXT().posterLoot));
+    else if (R.hp === 0 && !hidden && !clue) this.say(pickText(TEXT().posterNothing));
   }
 
   // True while the item hidden under poster `it` is still (partly) covered by paper.
@@ -683,7 +660,7 @@ export class Game {
       this.hover = null;
       return;
     }
-    this.say(pickText(loot?.clue ? TEXT.clueFound : loot ? TEXT.lootFound : pose.kind === 'fall' ? TEXT.fell : TEXT.nothing));
+    this.say(pickText(loot?.clue ? TEXT().clueFound : loot ? TEXT().lootFound : pose.kind === 'fall' ? TEXT().fell : TEXT().nothing));
   }
 
   // True when the current room is a lever room whose door has been opened (its levers stay put from then on).
@@ -695,7 +672,7 @@ export class Game {
   // Tap on a lever: it flips up or down. Once the door has been opened they are stuck.
   pullLever(it) {
     if (this.leverHold > 0) return;
-    if (this.leversSolved()) return void this.say(pickText(TEXT.leversStuck));
+    if (this.leversSolved()) return void this.say(pickText(TEXT().leversStuck));
     this.leverPos.get(this.roomIndex)[it.lever] ^= 1;
     this.onSfx?.('lever');
   }
@@ -707,7 +684,7 @@ export class Game {
     if (door.e.levers.every((v, i) => v === pos[i])) {
       this.unlocked.add(door.uid);
       this.onSfx?.('leverSuccess');
-      this.say(pickText(TEXT.leverRight));
+      this.say(pickText(TEXT().leverRight));
       return true;
     }
     pos.fill(0);
@@ -715,7 +692,7 @@ export class Game {
     for (const it of this.room.items) if (it.lever !== undefined) it.leverFast = true;
     door.shake = 1;
     this.onSfx?.('leverFail');
-    this.say(pickText(TEXT.leverWrong));
+    this.say(pickText(TEXT().leverWrong));
     return false;
   }
 
@@ -744,10 +721,10 @@ export class Game {
     if (this.hover === loot) this.hover = null;
     if (e.key !== undefined) {
       this.keys.push(e.key);
-      this.say(pickText(e.key === 0 ? TEXT.masterTaken : TEXT.keyTaken));
+      this.say(pickText(e.key === 0 ? TEXT().masterTaken : TEXT().keyTaken));
     } else {
       this.pills++;
-      this.say(pickText(TEXT.pillTaken));
+      this.say(pickText(TEXT().pillTaken));
     }
     this.onSfx?.('item');
     this.markExplored();
@@ -841,7 +818,7 @@ export class Game {
     if (this.phase !== 'idle' || this.jump) return;
     const h = this.hit(p, kind);
     if (!h) {
-      if (this.inDark() && !this.msg) this.say(pickText(TEXT.dark));
+      if (this.inDark() && !this.msg) this.say(pickText(TEXT().dark));
       return;
     }
     if (h === 'back') return void this.back();
@@ -858,13 +835,13 @@ export class Game {
         if (!this.keys.includes(e.lock)) {
           h.shake = 1;
           this.onSfx?.('locked');
-          this.say(pickText(this.keys.length ? TEXT.lockedHint : TEXT.locked));
+          this.say(pickText(this.keys.length ? TEXT().lockedHint : TEXT().locked));
           return;
         }
         this.keys = this.keys.filter((k) => k !== e.lock);
         this.unlocked.add(h.uid);
         // The master door ends the level: no way back, the next level is a new world.
-        this.say(pickText(e.to === EXIT ? TEXT.unlockMaster : TEXT.unlock));
+        this.say(pickText(e.to === EXIT ? TEXT().unlockMaster : TEXT().unlock));
       }
       this.onSfx?.(e.to === EXIT ? 'levelEnd' : 'door');
       this.go(e.to, true);
@@ -873,7 +850,7 @@ export class Game {
     // Painting: the first tap moves it; after that it only reminds you.
     if (!h.pose) return void this.movePainting(h);
     if (h.anim) return;
-    this.say(pickText(lootId(e) && !this.taken.has(h.uid) ? TEXT.lootLeft : TEXT.searched));
+    this.say(pickText(lootId(e) && !this.taken.has(h.uid) ? TEXT().lootLeft : TEXT().searched));
   }
 
   // Go back to the parent room (back arrow or the Space key). Same guards as a tap; false if not possible.
@@ -891,7 +868,7 @@ export class Game {
     this.pills--;
     this.run.grams++;
     this.health = Math.min(1, this.health + CONFIG.pills.heal);
-    this.say(pickText(TEXT.healed));
+    this.say(pickText(TEXT().healed));
     this.onSfx?.('healed');
   }
 
@@ -1169,7 +1146,7 @@ export class Game {
       backHover: this.hover === 'back',
       pills: this.phase === 'dead' || this.phase === 'end' ? 0 : this.pills,
       pillHover: this.hover === 'pill',
-      title: this.phase === 'end' ? (this.isLastLevel() ? TEXT.escaped : TEXT.level(this.world.level + 1)) : null,
+      title: this.phase === 'end' ? (this.isLastLevel() ? TEXT().escaped : TEXT().level(this.world.level + 1)) : null,
       level: this.phase === 'end' || this.phase === 'dead' ? null : this.world.level,
       // Quantized so the HUD is not redrawn for invisible changes while a ghost drains it.
       health: this.phase === 'dead' || this.phase === 'end' ? null : Math.round(Math.max(0, this.health) * 200) / 200,

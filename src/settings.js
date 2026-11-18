@@ -7,6 +7,7 @@ export const settings = {
   ambience: 1,
   sfx: 1,
   epilepsy: false, // true: no light flickering (flashlight, ceiling lights, ghost shimmer, screamers, heartbeat throb)
+  lang: null,      // locale code (i18n.js LANGS) chosen in Options; null = follow the browser's language
 };
 
 const DEFAULTS = { ...settings };
@@ -19,6 +20,7 @@ export function loadSettings() {
       const v = saved[k];
       if (typeof DEFAULTS[k] === 'number' && Number.isFinite(v)) settings[k] = Math.max(0, Math.min(1, v));
       if (typeof DEFAULTS[k] === 'boolean' && typeof v === 'boolean') settings[k] = v;
+      if (k === 'lang' && typeof v === 'string') settings[k] = v; // i18n.js ignores unknown codes
     }
   } catch {}
 }
