@@ -813,13 +813,13 @@ export class Game {
 
   frame() {
     const L = this.light, f = CONFIG.flashlight, sh = CONFIG.shadow, g = CONFIG.glow;
-    if (this.phase === 'dead') {
-      return {
-        light: { x: L.x, y: L.y, r: f.radius, exposure: 0 },
-        bg: null,
-        items: [],
-        overlay: screamerOverlay(this.screamer, this.phaseT, CONFIG.screamer.holdS),
-      };
+    // Screamers (death, or a screamer room's jumpscare) show over black, so the flashing is image vs black. Over the
+    // lit room the "off" frames showed a bright room instead and the flashing barely read.
+    const scream = this.phase === 'dead' ? screamerOverlay(this.screamer, this.phaseT, CONFIG.screamer.holdS)
+      : this.jump && this.jump.t >= 0 ? screamerOverlay(this.jump.img, this.jump.t, CONFIG.darkRooms.screamerS)
+      : undefined;
+    if (scream !== undefined) {
+      return { light: { x: L.x, y: L.y, r: f.radius, exposure: 0 }, bg: null, items: [], overlay: scream };
     }
     // Shadows fall away from whichever light is stronger: the flashlight (held low right) or the ceiling light.
     const D = CONFIG.darkRooms, ceil = this.exposure * this.ceiling, flash = this.exposure * this.lamp;
@@ -889,7 +889,7 @@ export class Game {
       light: { x: L.x, y: L.y, r: f.radius, exposure: flash, room: [lt.x, lt.y, lt.reach, ceil] },
       bg: this.phase === 'end' ? null : this.room.bg,
       items,
-      overlay: this.jump && this.jump.t >= 0 ? screamerOverlay(this.jump.img, this.jump.t, D.screamerS) : null,
+      overlay: null,
     };
   }
 }
