@@ -9,7 +9,7 @@ import { Hud } from './hud.js';
 import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex, setVolumes } from './audio.js';
 import { initSfx, playRole } from './sfx.js';
 import { startHeartbeat, beatEnvelope } from './heartbeat.js';
-import { CONFIG } from './config.js';
+import { CONFIG, atLevel } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience, startSilence, ambienceLoops, ambiencePool, setOutside } from './ambience.js';
 import { Menu } from './menu.js';
 import { settings, loadSettings } from './settings.js';
@@ -40,7 +40,7 @@ async function boot() {
   // avoidAmbience: the previous level's loop, so two levels in a row never share one.
   const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
     ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, levers: CONFIG.levers,
-    windows: CONFIG.windows, weather: CONFIG.weather.chances, level,
+    windows: CONFIG.windows, weather: atLevel(CONFIG.weather.chances, level), level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   // sound: false when the main menu is shown next (its START plays it).
@@ -53,7 +53,8 @@ async function boot() {
     console.info('[casa] level', level, 'seed', game.world.seed, game.world);
     wake();
   };
-  game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
+  // After the "Level N" card: the next level, or, after the last one's "You got out." card, back to the main menu.
+  game.onWorldEnd = () => (game.isLastLevel() ? toMainMenu() : startLevel((game.world.seed + 1) >>> 0, game.world.level + 1));
   // A new run: level 1 with a new maze, full health and no pills (after death or QUIT: see toMainMenu).
   const newRun = (sound) => {
     game.health = 1;
@@ -100,7 +101,7 @@ async function boot() {
       startRandomAmbience(() => {
         if (!started || menu.open || game.phase !== 'idle') return false;
         const S = CONFIG.ambience.silence, [a, b] = S.ghostDelayS;
-        if (Math.random() < S.ghostChance) game.hurryGhost((a + Math.random() * (b - a)) * 1000);
+        if (Math.random() < atLevel(S.ghostChance, game.world.level)) game.hurryGhost((a + Math.random() * (b - a)) * 1000);
         wake();
       });
       game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking

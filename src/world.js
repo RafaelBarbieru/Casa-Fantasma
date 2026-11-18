@@ -48,6 +48,7 @@
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
+import { CONFIG, atLevel } from './config.js';
 
 export const EXIT = -1;
 
@@ -58,7 +59,8 @@ export function generateWorld(seed, db, {
   weather = { none: 1 }, level = 1,
 } = {}) {
   const rng = createRng(seed);
-  const perLevel = (arr) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
+  const perLevel = (v) => atLevel(v, level) ?? 0;
+  const levelRange = (v) => (Array.isArray(v[0]) ? perLevel(v) : v); // [min, max], or one per level
   // Lever room: its own stream, always the same number of draws, so it never shifts anything else it doesn't add.
   // A level without one (levels 1-2) gets exactly the layout it had before lever rooms existed.
   const lrng = createRng((seed ^ 0x1e7e25) >>> 0);
@@ -73,7 +75,7 @@ export function generateWorld(seed, db, {
     sideLocks: [0, 1, 2, 3], masterBehindChance: 0.6, doorRoomChance: 0.45, ...maze,
   };
   const range = ([a, b]) => a + rng.int(b - a + 1);
-  const sideLocks = m.sideLocks[Math.min(level, m.sideLocks.length) - 1] ?? 0;
+  const sideLocks = perLevel(m.sideLocks);
   const masterRoll = sideLocks > 0 && rng.next() < m.masterBehindChance;
   const masterBehind = masterRoll && !leverVault; // the lever region is the vault instead
   const nLocks = 1 + sideLocks;
@@ -128,7 +130,7 @@ export function generateWorld(seed, db, {
   };
 
   addRoom('doors', -1, 0);
-  grow(0, range(m.openRooms), sideLocks + (masterBehind || leverVault ? 0 : 1), nLocks + (hasLevers ? 1 : 0));
+  grow(0, range(levelRange(m.openRooms)), sideLocks + (masterBehind || leverVault ? 0 : 1), nLocks + (hasLevers ? 1 : 0));
 
   const keys = [];
   const lock = (k) => {
@@ -147,14 +149,14 @@ export function generateWorld(seed, db, {
     const o = lock(k);
     link(o, k === vault ? 'paintings' : randomKind(), k);
   }
-  for (let k = 1; k <= sideLocks; k++) grow(k, range(m.sideRooms) - 1, 0, 0);
+  for (let k = 1; k <= sideLocks; k++) grow(k, range(levelRange(m.sideRooms)) - 1, 0, 0);
   // Lever room (stage 0) on a free open-region door; its lever door leads to region `leverStage`.
   if (hasLevers) {
     const o = rng.pick(openIn(0));
     take(o);
     const lr = link(o, 'levers', 0);
     link({ room: lr, door: 0 }, leverVault ? 'paintings' : randomKind(), leverStage);
-    grow(leverStage, range(m.sideRooms) - 1, 0, 0);
+    grow(leverStage, range(levelRange(m.sideRooms)) - 1, 0, 0);
   }
 
   // Hide keys: side keys in the open region, the master key in the open region or in the vault.
@@ -313,7 +315,7 @@ export function generateWorld(seed, db, {
 // ?level=N starts at level N (for testing).
 export function levelFromUrl() {
   const s = new URLSearchParams(location.search).get('level');
-  return s !== null && /^\d+$/.test(s) && Number(s) > 0 ? Number(s) : 1;
+  return s !== null && /^\d+$/.test(s) && Number(s) > 0 ? Math.min(Number(s), CONFIG.levels) : 1;
 }
 
 export function seedFromUrl() {

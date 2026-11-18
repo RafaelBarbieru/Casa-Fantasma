@@ -80,6 +80,13 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - The loop runs only while `game.update()` returns busy (light easing, transition, glow) or while debug is on. Input and resize call `wake()`.
 - The letterbox is "contain" at 16:9. Portrait on touch devices shows a rotate hint.
 
+## Difficulty (10 levels)
+- `CONFIG.levels` = 10. `atLevel(v, level)` (config.js): arrays are per-level lists (index 0 = level 1, last repeats), anything else is one value for all levels. A per-level RANGE must be a list of ranges (`[[a, b], ...]`); world.js `levelRange` accepts both shapes. game.js reads them via `Game.lv(v)`.
+- Every threat list has 10 entries; levels 1-5 keep their old values, so worlds for levels 1-5 are byte-identical to before (checked headless, seeds 1-300). Also per-level now: maze openRooms/sideRooms/sideLocks (5 on level 10), weather.chances (list of odds objects, main passes atLevel), ambience.silence.ghostChance.
+- The user's rule: difficulty rises ONLY through chances/rates and maze size. Never scale base values per level (health, drainPerS, pills.heal, lingerS, escapeS, fade/grace times). Those stay single values (and ranges like lingerS must not go through atLevel: a bare [a, b] reads as a per-level list).
+- Last level: `Game.isLastLevel()`; its 'end' card says TEXT.escaped and main's onWorldEnd goes to `toMainMenu()`. `?level=` is clamped to CONFIG.levels.
+- Levels 1-10 solvable over 400 seeds (key/door BFS); level 10 averages ~30 rooms, 6 ghost rooms, 10 dark rooms.
+
 ## World generation (maze, one world per level)
 - Seed comes from `?seed=N`, or is random; `?level=N` (default 1). The game logs `[casa] level N seed S`.
 - Rooms form a tree (rooms[0] = start, 3 doors). Door rooms have 2-3 doors; painting rooms 1-4 paintings. "Back" = parent.
@@ -155,7 +162,7 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 ## Next likely work
 - Developer tools: slot editor (drag slots on the room, write rooms.json) and an event/trigger editor. Keep `world.js` and the data formats editor-friendly.
 - Per-room asset loading or preloading once the asset count grows (right now everything loads up front).
-- A real ending.
+- A real ending (the level-10 card is a placeholder).
 
 ## Verify
 `npm run dev`, then open `http://localhost:5173/?debug&seed=42` (see the seed 42 notes above).

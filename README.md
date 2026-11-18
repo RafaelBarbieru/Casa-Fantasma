@@ -42,6 +42,16 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
 - Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings or posters).
 - Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
+- A run has **10 levels**. The master door of level 10 shows "You got out." and goes back to the main menu (a placeholder until there is a real ending). `levels` at the top of `src/config.js` sets the count.
+
+### Difficulty
+Levels 1-5 ease you in. Levels 6-10 get much harder: things go wrong more and more often up to level 10. The basics never change between levels: health, how fast a ghost hurts you, how much a pill heals, how long a ghost stays, how long you have to react. All of it is in `src/config.js`, as lists with **one value per level** (the first value is level 1, the last one is level 10). Roughly, from level 5 to level 10:
+- the maze grows from about 16 to about 30 rooms (more locked side doors, more rooms behind them, a lever room on every level 10);
+- random ghosts come more than twice as often (`ghost.randomPerMin`), ghost rooms are about 3 times as common, and a silence brings a ghost twice as often;
+- pills barely become more common (1.6 to 1.9 per level);
+- more dark rooms, screamer rooms, faces behind paintings, false alarms, long darks, storms, gusts and faces in the windows.
+
+To change one level, change its value in the list. Lists shorter than 10 repeat their last value; a single value (not a list) applies to every level.
 - Click a painting and it slips off one nail and swings, showing the wall behind it. Sometimes something hangs there (a key or pills): **click it to take it**. Now and then a painting falls to the floor instead and cracks, with a crash.
 - **Posters** have to be scratched off: every click tears a piece away (with a scratching sound), ripping outward from a random spot on the poster's edge. A poster takes between 3 and 8 clicks. A key or pills hidden under it can be taken as soon as it is fully uncovered, which is sometimes early and sometimes only with the last scratch. The last scratch tears the poster apart with a louder ripping sound; a few scraps stay on the wall.
 - Keys you hold appear at the top left, each with a small picture of the door it opens. The **master key is gold**; other keys are grey. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
@@ -67,7 +77,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
   - A ghost room always has the same ghost in the same place, so remember which door it was and avoid it.
 - **From level 3**, a ghost can appear in any room except the first room of the level, at any moment.
   - The flashlight dies and nothing glows any more, so you have to remember where the doors were and get out: back, or through another door.
-  - The ghost stays in that room for 1 to 10 seconds after you escape, so going straight back means meeting it again.
+  - The ghost stays in that room for 1 to 2 seconds after you escape, so going straight back means meeting it again.
 - The higher the level, the more ghost rooms and random ghosts there are.
 - **Health.** Ghosts drain it every second you share a room with them (about 8 seconds from full to dead). You hear it and see it:
   - after losing 5%, a slow heartbeat starts, about one beat a second;
@@ -76,7 +86,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
   - a red glow creeps in from the screen edges once the heartbeat starts, getting stronger as health falls and throbbing with each beat.
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
 - **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
-  - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
+  - They are rare early on and get a little more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3, 1.6, 1.6, 1.7, 1.8 and 1.9.
 - At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), and you are sent back to the main menu; START begins a new run from level 1.
 
 ### Dark rooms
@@ -189,9 +199,9 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 `src/config.js` → `maze`:
 - `startDoors`, `doors`: doors in the first room, and in the other door rooms (`[2, 3]` = 2 or 3).
 - `paintings`: paintings in a painting room (`[1, 4]`).
-- `openRooms`: how many rooms you can reach without any key. Bigger = bigger maze.
-- `sideLocks: [0, 1, 2, 3]`: locked side doors in level 1, 2, 3, and 4 onwards (the last number repeats).
-- `sideRooms`: how many rooms are behind each side door.
+- `openRooms`: how many rooms you can reach without any key, one `[min, max]` per level. Bigger = bigger maze.
+- `sideLocks`: locked side doors, one number per level (0 on level 1, 5 on level 10).
+- `sideRooms`: how many rooms are behind each side door, one `[min, max]` per level.
 - `masterBehindChance`: when there are side doors, how often the master key is behind one of them (0.6 = 60%).
 - `doorRoomChance`: how often a door leads to more doors rather than paintings.
 
@@ -362,4 +372,4 @@ All visual settings live in `src/config.js`, and you can change them freely:
 
 ## What's next
 - Developer tools for placing slots visually, and for designing levels and events.
-- Door/key/painting sounds, a real ending.
+- Door/key/painting sounds, a real ending (level 10 currently just says "You got out.").

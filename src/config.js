@@ -1,5 +1,14 @@
 // Global tunables. Scene units = pixels of the 1920x1080 reference room image.
+// Per-level values: a list where index 0 = level 1 and the last value repeats; a single value applies to every level.
+export const atLevel = (v, level) => (Array.isArray(v) ? v[Math.min(Math.max(level, 1), v.length) - 1] : v);
+
 export const CONFIG = {
+  // Levels in a run. Finishing the last one ends the game (an "escaped" card, then the main menu).
+  // Every per-level list below has one value per level (1..10): levels 1-5 ease you in, 6-10 get hard fast.
+  // Difficulty rises only through chances and rates (how often things go wrong) and maze size; base values like
+  // health, damage, healing and time to react stay the same on every level.
+  levels: 10,
+
   sceneW: 1920,
   sceneH: 1080,
 
@@ -36,14 +45,14 @@ export const CONFIG = {
     fallenGain: 0.8,    // a fallen painting is a bit darker
     // Sometimes a face waits behind a painting that hides nothing: a quick screamer (sfx screamerShort, an image
     // from data/ghosts.json "screamers"), no damage. Per level (index 0 = level 1, the last value repeats).
-    screamerChance: [0, 0, 0.04, 0.06, 0.08, 0.1, 0.12], // none on levels 1-2
+    screamerChance: [0, 0, 0.04, 0.06, 0.08, 0.1, 0.12, 0.15, 0.18, 0.22], // none on levels 1-2
     screamerDelayS: 0.25, // after the tap, before it jumps out (the painting is already moving)
   },
 
   // False alarms: the light flickers and dies exactly as when a ghost comes (same sound), stays dark a moment, then
   // comes back and nothing happens. Not in a level's first room or ghost rooms. Per-level lists: index 0 = level 1.
   falseAlarm: {
-    perMin: [0, 0.4, 0.5, 0.6, 0.7], // false alarms per minute spent in a room (0 = never)
+    perMin: [0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2], // false alarms per minute spent in a room (0 = never)
     graceS: 4,          // never in the first seconds after entering a room (or right after another one)
     darkS: [1.2, 2.8],  // [min, max] seconds the light stays off; longer than a ghost takes to show up
     backS: 0.7,         // the light flickers back on over this long
@@ -117,7 +126,7 @@ export const CONFIG = {
     winHoldS: 3,        // "Level N" card before the next level starts (a tap skips it)
     // Sometimes, going through a door (not back), the screen stays black a while before the next room shows
     // (sfx doorWait plays then, if it has sounds). Per level (index 0 = level 1, the last value repeats).
-    waitChance: [0.15, 0.2, 0.25, 0.3],
+    waitChance: [0.15, 0.2, 0.25, 0.3, 0.3, 0.33, 0.36, 0.4, 0.43, 0.46],
     waitS: [1.2, 2.5],  // [min, max] seconds of black
     waitAmbience: 0.5,  // chance one of the random ambience sounds (ambience.random.pool) plays in that black
   },
@@ -132,7 +141,7 @@ export const CONFIG = {
     snap: true,         // snap sprites + light to whole low-res pixels (PS1 had no sub-pixel precision)
   },
 
-  // Maze generator (src/world.js). Ranges are [min, max] inclusive.
+  // Maze generator (src/world.js). Ranges are [min, max] inclusive. openRooms, sideRooms, sideLocks: per level.
   // Every level has ONE master door (its key takes you to the next level). From level 2 on there are also
   // side doors: locked rooms whose key is somewhere in the level; behind one of them may be the master key,
   // the others hold nothing useful.
@@ -140,9 +149,11 @@ export const CONFIG = {
     startDoors: 3,         // doors in the first room
     doors: [2, 3],         // doors in every other door room
     paintings: [1, 4],     // paintings in a painting room
-    openRooms: [3, 6],     // rooms reachable without any key (not counting the first room)
-    sideRooms: [1, 3],     // rooms behind each locked side door
-    sideLocks: [0, 1, 2, 3], // locked side doors per level: level 1, 2, 3, 4+ (the last value repeats)
+    // rooms reachable without any key (not counting the first room)
+    openRooms: [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [4, 7], [4, 7], [5, 8], [5, 8], [6, 9]],
+    // rooms behind each locked side door
+    sideRooms: [[1, 3], [1, 3], [1, 3], [1, 3], [1, 3], [1, 3], [2, 3], [2, 3], [2, 4], [2, 4]],
+    sideLocks: [0, 1, 2, 3, 3, 3, 4, 4, 4, 5], // locked side doors
     masterBehindChance: 0.6, // with side doors: chance the master key is behind one of them
     doorRoomChance: 0.45,  // when a door leads to a new room: chance it is a door room (else paintings)
   },
@@ -192,18 +203,18 @@ export const CONFIG = {
 
   // Ghosts (data/ghosts.json). Per-level lists: index 0 = level 1, the last value repeats.
   ghost: {
-    roomChance: [0, 0.3, 0.35, 0.4, 0.45, 0.5], // chance a dead-end door leads to a ghost-only (black) room.
+    roomChance: [0, 0.3, 0.35, 0.4, 0.45, 0.5, 0.56, 0.62, 0.69, 0.75], // chance a dead-end door leads to a ghost-only (black) room.
                                                  // Levels with a chance > 0 get at least one when possible.
-    randomPerMin: [0, 0, 1, 1.5, 2, 2.5],       // random ghost appearances per minute spent in a room (not the
+    randomPerMin: [0, 0, 1, 1.5, 2, 2.5, 3.2, 4, 5, 6], // random ghost appearances per minute spent in a room (not the
                                                  // first room of a level, not ghost rooms). 0 = never.
     graceS: 2,          // no random ghost in the first seconds after entering a room
-    lingerS: [1, 2],   // after you escape a random ghost, it stays in that room this long (random in range)
+    lingerS: [1.0, 2.0],    // after you escape a random ghost, it stays in that room this long (random in range)
     drainPerS: 0.12,    // health lost per second in a room with a ghost (0.12 = dead in ~8 s)
     regenPerS: 0,       // health regained per second away from ghosts (0 = never heals)
     lampOffS: 0.3,      // the flashlight flickers this long, then dies
     // Random in range for every ghost, so a ghost room can't be told from a dark room by how fast the ghost comes:
-    fadeDelayS: [0.5, 1.5], // [min, max] seconds after the flashlight starts dying before the ghost starts to fade in...
-    fadeInS: [0.5, 2.0],    // ...[min, max] seconds the fade-in takes
+    fadeDelayS: [0.25, 1.0], // [min, max] seconds after the flashlight starts dying before the ghost starts to fade in...
+    fadeInS: [0.2, 0.5],    // ...[min, max] seconds the fade-in takes
     gain: 3.2,          // ghost brightness (the art is very dark; the PS1 color reduction eats faint detail)
     drift: 10,          // slow floating movement, scene px
   },
@@ -215,7 +226,7 @@ export const CONFIG = {
     // Pills hidden per level (index 0 = level 1, the last value repeats). The whole part is always placed, the
     // fraction is the chance of one more: 0.35 = a 35% chance of one pill, 1.5 = one pill plus a 50% chance of a
     // second. Kept rare early (one pill heals most of the way) and rising with the ghosts (config.ghost).
-    perLevel: [0, 0.35, 0.6, 1, 1.3, 1.6],
+    perLevel: [0, 0.35, 0.6, 1, 1.3, 1.6, 1.6, 1.7, 1.8, 1.9],
   },
 
   // Heartbeat sound: nothing above `start`; slow heartbeat down to `fastBelow`, fast heartbeat below.
@@ -251,8 +262,8 @@ export const CONFIG = {
   // invisible in the dark: it  // glows when the pointer is over it, and nothing else in the room can be used until it is turned on. Then a ceiling
   // light comes on (the flashlight stays off). Per-level lists: index 0 = level 1, the last value repeats.
   darkRooms: {
-    roomChance: [0.2, 0.2, 0.25, 0.25, 0.3],      // chance any room except the first is dark (doors, keys and all)
-    screamerChance: [0, 0, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4], // (none on levels 1-2) chance a dark room with nothing to find (paintings, no key or
+    roomChance: [0.2, 0.2, 0.25, 0.25, 0.3, 0.32, 0.35, 0.38, 0.42, 0.45], // chance any room except the first is dark (doors, keys and all)
+    screamerChance: [0, 0, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5], // (none on levels 1-2) chance a dark room with nothing to find (paintings, no key or
                                                  // pill behind them) is a screamer room instead: empty but for the
                                                  // switch, and a screamer jumps out when the light comes on
     switchY: [560, 640, 720], // heights tried for the switch (scene px, centre), first one with room to spare wins
@@ -271,7 +282,7 @@ export const CONFIG = {
   // plays lever_fail and every lever snaps back up; the right one plays lever_success and they stay where they are.
   // Per-level lists: index 0 = level 1, the last value repeats.
   levers: {
-    roomChance: [0, 0, 0.5, 0.5, 0.6], // chance a level has a lever room
+    roomChance: [0, 0, 0.5, 0.5, 0.6, 0.65, 0.7, 0.8, 0.9, 1], // chance a level has a lever room
     masterChance: 0.35, // chance the master (gold) key is behind the lever door; otherwise nothing important is
     count: 5,           // levers in the room (at most the lever slots of the "levers" layout)
     pullS: 0.22,        // how long a lever takes to go up or down
@@ -308,7 +319,13 @@ export const CONFIG = {
   // window it sounds clear, anywhere else muffled, as if through the walls. Per-level lists: index 0 = level 1, the
   // last value repeats.
   weather: {
-    chances: { none: 1, windy: 1, storm: 1 }, // relative odds of each weather
+    // Relative odds of each weather, per level: later levels are stormier.
+    chances: [
+      { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 },
+      { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1.5 },
+      { none: 0.8, windy: 1, storm: 1.5 }, { none: 0.6, windy: 1, storm: 2 }, { none: 0.4, windy: 1, storm: 2 },
+      { none: 0.3, windy: 1, storm: 2.5 },
+    ],
     loops: { windy: 'ambience/wind_loop', storm: 'ambience/rain_loop' }, // exact sound names (path in audio-src/)
     loopVolume: 0.8,
     fadeInS: 4,
@@ -319,7 +336,7 @@ export const CONFIG = {
     // Windy: in a room with open windows a gust comes now and then (sfx windGust). slamAtS seconds into it the
     // shutters slam shut (sfx windowClose): they swing in over swingS and land exactly then, then bounce a little.
     // They stay shut for the rest of the level: no more light from that room's windows, and it is muffled.
-    gustPerMin: [0.6, 0.8, 1, 1.2, 1.4], // gusts per minute spent in a room with open windows
+    gustPerMin: [0.6, 0.8, 1, 1.2, 1.4, 1.5, 1.6, 1.8, 2, 2.2], // gusts per minute spent in a room with open windows
     gustGraceS: 3,      // never in the first seconds after entering a room
     slamAtS: 0.8,       // when the shutters hit (s from the start of the gust sound; sfx/wind_gust peaks there)
     swingS: 0.14,
@@ -328,9 +345,9 @@ export const CONFIG = {
     // Storm: thunder now and then in any room (sfx thunder). Where a window is open the lightning lights the room up,
     // and sometimes (faceChance) a face is outside the window. If you're still in the room escapeS seconds later, a
     // screamer jumps out (sfx screamerShort, no damage).
-    thunderPerMin: [1, 1.2, 1.4, 1.6],
+    thunderPerMin: [1, 1.2, 1.4, 1.6, 1.6, 1.8, 2, 2.2, 2.4, 2.6],
     thunderGraceS: 4,
-    faceChance: [0.0, 0.0, 0.3, 0.4, 0.5],
+    faceChance: [0, 0, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
     escapeS: 1.5,
   },
 
@@ -367,7 +384,7 @@ export const CONFIG = {
       holdS: [10, 22],        // [min, max] seconds of silence
       fadeOutS: 2.5,          // the loop fades out over this long...
       fadeInS: 5,             // ...and back in over this long
-      ghostChance: 0.35,      // chance a random ghost comes during the silence...
+      ghostChance: [0.35, 0.35, 0.35, 0.35, 0.35, 0.42, 0.5, 0.58, 0.65, 0.75], // chance a random ghost comes during the silence (per level)...
       ghostDelayS: [3, 8],    // ...this many seconds after it starts
     },
   },

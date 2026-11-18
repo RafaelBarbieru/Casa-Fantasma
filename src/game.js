@@ -1,7 +1,7 @@
 // Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, dark rooms
 // (light switch, ceiling light, screamer rooms), lever rooms, windows + weather (gusts, thunder, faces), HUD state.
 // Produces a frame description for Renderer.
-import { CONFIG } from './config.js';
+import { CONFIG, atLevel } from './config.js';
 import { EXIT } from './world.js';
 import { settings } from './settings.js';
 import { clueId } from './assets.js';
@@ -9,7 +9,7 @@ import { clueId } from './assets.js';
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const pickText = (arr) => arr[(Math.random() * arr.length) | 0];
 const between = ([a, b]) => a + Math.random() * (b - a);
-const perLevel = (arr, level) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
+// Per-level tunables: Game.lv(value) (CONFIG.atLevel at the current world's level).
 const now = () => performance.now();
 const rad = (deg) => (deg * Math.PI) / 180;
 
@@ -57,6 +57,7 @@ const TEXT = {
   leversStuck: ["The levers won't move any more."],
   dark: ["It's too dark to see anything.", 'There must be a light switch somewhere.', 'You feel along the wall.'],
   level: (n) => `Level ${n}`,
+  escaped: 'You got out.',
 };
 
 export const floorLineY = () => CONFIG.sceneH * CONFIG.room.floorLine;
@@ -263,7 +264,7 @@ export class Game {
     if (spec.kind === 'ghost') this.summon(spec.ghost, false);
     else if (linger && linger.goneAt > now()) this.summon(linger, true);
     // Random ghost: exponential waiting time, so it can come at any moment (from level ghost.randomPerMin > 0).
-    const perMin = perLevel(CONFIG.ghost.randomPerMin, this.world.level ?? 1);
+    const perMin = this.lv(CONFIG.ghost.randomPerMin);
     this.spawnAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' && perMin > 0
       ? now() + (CONFIG.ghost.graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000
       : null;
@@ -277,6 +278,16 @@ export class Game {
     this.gustAt = sky === 'windy' && this.outsideOpen() ? this.nextWeather(W.gustPerMin, W.gustGraceS) : null;
     this.thunderAt = sky === 'storm' ? this.nextWeather(W.thunderPerMin, W.thunderGraceS) : null;
     this.onRoomChange?.(this);
+  }
+
+  // The last level of the run (CONFIG.levels): its master door ends the game.
+  isLastLevel() {
+    return (this.world?.level ?? 1) >= CONFIG.levels;
+  }
+
+  // A per-level tunable (list or single value, see CONFIG.atLevel) at the current level.
+  lv(v) {
+    return atLevel(v, this.world?.level ?? 1) ?? 0;
   }
 
   // The game was paused for ms: push the wall-clock timers (random ghost, lingering ghosts) back by as much.
@@ -302,7 +313,7 @@ export class Game {
 
   // When the next false alarm comes: exponential waiting time (CONFIG.falseAlarm.perMin), at least graceS from now.
   nextFalseAlarm(graceS) {
-    const perMin = perLevel(CONFIG.falseAlarm.perMin, this.world.level ?? 1);
+    const perMin = this.lv(CONFIG.falseAlarm.perMin);
     return perMin > 0 ? now() + (graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000 : null;
   }
 
@@ -318,7 +329,7 @@ export class Game {
 
   // When the next gust or thunder comes: exponential waiting time (perMin per level), at least graceS from now.
   nextWeather(perMinList, graceS) {
-    const perMin = perLevel(perMinList, this.world.level ?? 1);
+    const perMin = this.lv(perMinList);
     return perMin > 0 ? now() + (graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000 : null;
   }
 
@@ -383,7 +394,7 @@ export class Game {
     this.thunderAt = this.world.weather === 'storm' ? this.nextWeather(W.thunderPerMin, W.thunderGraceS) : null;
     this.onSfx?.('thunder');
     const open = this.outsideOpen() ? this.room.windows : [];
-    if (open.length && !this.face && !this.ghost && (forceFace || Math.random() < perLevel(W.faceChance, this.world.level ?? 1)))
+    if (open.length && !this.face && !this.ghost && (forceFace || Math.random() < this.lv(W.faceChance)))
       this.face = { win: (Math.random() * open.length) | 0, t: 0 };
   }
 
@@ -661,7 +672,7 @@ export class Game {
     if (pose.kind === 'fall') this.onSfx?.('fall', CONFIG.paintings.fallSfxDelayS);
     else this.onSfx?.('painting');
     // Sometimes a face is waiting behind an empty painting: a quick screamer (no damage), like a screamer room's.
-    if (!loot && Math.random() < perLevel(CONFIG.paintings.screamerChance, this.world.level ?? 1)) {
+    if (!loot && Math.random() < this.lv(CONFIG.paintings.screamerChance)) {
       this.jump = { img: this.pickScreamer(), t: -CONFIG.paintings.screamerDelayS };
       this.hover = null;
       return;
@@ -795,7 +806,7 @@ export class Game {
     this.phaseT = 0;
     this.hover = null;
     const tr = CONFIG.transition;
-    this.wait = door && target !== EXIT && Math.random() < perLevel(tr.waitChance, this.world.level ?? 1) ? between(tr.waitS) : 0;
+    this.wait = door && target !== EXIT && Math.random() < this.lv(tr.waitChance) ? between(tr.waitS) : 0;
   }
 
   // --- input -------------------------------------------------------------
@@ -1150,7 +1161,7 @@ export class Game {
       backHover: this.hover === 'back',
       pills: this.phase === 'dead' || this.phase === 'end' ? 0 : this.pills,
       pillHover: this.hover === 'pill',
-      title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
+      title: this.phase === 'end' ? (this.isLastLevel() ? TEXT.escaped : TEXT.level(this.world.level + 1)) : null,
       level: this.phase === 'end' || this.phase === 'dead' ? null : this.world.level,
       // Quantized so the HUD is not redrawn for invisible changes while a ghost drains it.
       health: this.phase === 'dead' || this.phase === 'end' ? null : Math.round(Math.max(0, this.health) * 200) / 200,
