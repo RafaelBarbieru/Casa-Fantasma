@@ -104,6 +104,60 @@ export function addClueSprites(world, sprites) {
     if (it.clue && !sprites.has(clueId(it.clue))) sprites.set(clueId(it.clue), makeClueSprite(it.clue));
 }
 
+// Window extras, drawn here from the window art's size (no art files): 'window_sky' = the night behind the glass,
+// 'window_face' = a head-and-shoulders silhouette standing outside (storms, see CONFIG.weather.faceChance). Both are
+// the window's native size, so they share its rect. The game draws them self-lit: the face is black, so it only shows
+// against the sky when lightning brightens it (except its eyes, faintly).
+function addWindowSprites(sprites) {
+  const win = sprites.get('window');
+  if (!win) return;
+  const [bx0, by0, bx1, by1] = win.box, W = bx1 - bx0, H = by1 - by0, inset = 4;
+  const canvas = () => {
+    const c = document.createElement('canvas');
+    c.width = win.w;
+    c.height = win.h;
+    return [c, c.getContext('2d')];
+  };
+  // Sky: a dark blue gradient, a little lighter low down (the horizon), inside the frame's outer edge.
+  const [sky, s] = canvas();
+  const grad = s.createLinearGradient(0, by0, 0, by1);
+  grad.addColorStop(0, 'rgb(12,16,30)');
+  grad.addColorStop(1, 'rgb(30,36,52)');
+  s.fillStyle = grad;
+  s.fillRect(bx0 + inset, by0 + inset, W - 2 * inset, H - 2 * inset);
+  sprites.set('window_sky', makeSprite(sky));
+  // Face: head (tilted a little), long hair hanging past it, neck and shoulders down to the sill.
+  const [face, f] = canvas();
+  const cx = bx0 + W * 0.52, hy = by0 + H * 0.36;
+  f.fillStyle = f.strokeStyle = 'rgb(3,3,5)';
+  f.beginPath();
+  f.ellipse(cx, hy, W * 0.19, H * 0.16, 0.12, 0, Math.PI * 2);
+  f.fill();
+  f.fillRect(cx - W * 0.07, hy, W * 0.14, H * 0.28);
+  f.beginPath();
+  f.moveTo(bx0 + W * 0.04, by1);
+  f.quadraticCurveTo(bx0 + W * 0.06, by0 + H * 0.64, cx - W * 0.12, by0 + H * 0.6);
+  f.lineTo(cx + W * 0.12, by0 + H * 0.6);
+  f.quadraticCurveTo(bx1 - W * 0.06, by0 + H * 0.64, bx1 - W * 0.04, by1);
+  f.closePath();
+  f.fill();
+  f.lineWidth = 3;
+  for (let i = 0; i < 9; i++) {
+    const side = i % 2 ? 1 : -1, a = 0.1 + (i / 9) * 0.08, x = cx + side * W * (0.13 + a * 0.4);
+    f.beginPath();
+    f.moveTo(cx + side * W * 0.08, hy - H * 0.13);
+    f.quadraticCurveTo(x + side * 6, hy, x + side * (2 + (i % 3) * 3), hy + H * (0.16 + a));
+    f.stroke();
+  }
+  f.fillStyle = 'rgb(95,95,88)'; // eyes
+  for (const dx of [-0.07, 0.07]) {
+    f.beginPath();
+    f.arc(cx + W * dx, hy + H * 0.01 + dx * 8, 2.5, 0, Math.PI * 2);
+    f.fill();
+  }
+  sprites.set('window_face', makeSprite(face));
+}
+
 // Loads everything referenced by the db. Fine while the game is tiny; switch to per-room loading later.
 export async function loadAssets(db, onProgress = () => {}) {
   const jobs = [];
@@ -127,5 +181,6 @@ export async function loadAssets(db, onProgress = () => {}) {
       onProgress(++done / jobs.length);
     }),
   );
+  addWindowSprites(out.sprites);
   return out;
 }

@@ -2,6 +2,7 @@
 //
 // world = {
 //   seed, level, ambience,
+//   weather: 'none' | 'windy' | 'storm',  heard through the windows (see 7. below)
 //   rooms: [{                         rooms[0] is the start. The rooms form a tree: every room but the
 //     kind: 'doors' | 'paintings' | 'ghost' | 'levers',  start has exactly one way in (its parent), which is where
 //                                     "back" goes. 'levers' = one door locked by a row of levers (see 6. below)
@@ -9,6 +10,8 @@
 //     dark?: { switchAt, screamer? }, dark room: no flashlight, nothing usable until its light switch is on.
 //                                     switchAt 0..1 picks the switch's spot among the free ones on the wall.
 //                                     screamer: the room is empty (items: []) and a screamer jumps out at the light
+//     windows?: [{ x, y }],           painting and ghost rooms only: 1-2 windows, centred on these scene px (free
+//                                     painting spots of the room's layout; ghost rooms use the "gallery" layout's)
 //     parent: index | -1,
 //     stage: n,                       0 = reachable without keys, n = behind locked side door n (debug/editor info)
 //     template: roomId,               data/rooms.json layout (slots)
@@ -40,6 +43,8 @@
 //      master key. The lever door never needs a key. Rolled on its own random stream (leverRng).
 //      Its combination (levers.clueChance) is painted on the wall behind one painting or poster outside the lever
 //      region, picked on another stream of its own (clue).
+//   7. The weather (weather.chances), and windows in some painting and ghost rooms (windows.roomChance): never on a
+//      wall with a door. Both on a random stream of their own (wrng).
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -49,7 +54,8 @@ export const EXIT = -1;
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
 export function generateWorld(seed, db, {
-  ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, levers = {}, level = 1,
+  ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, levers = {}, windows = {},
+  weather = { none: 1 }, level = 1,
 } = {}) {
   const rng = createRng(seed);
   const perLevel = (arr) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
@@ -279,9 +285,29 @@ export function generateWorld(seed, db, {
     }
   });
 
+  // Weather + windows: their own stream too (1 draw, then 4 per room, always), so they never shift anything else.
+  // Windows go in free painting spots, so never on a wall with a door: painting rooms and ghost rooms only.
+  const wrng = createRng((seed ^ 0x3171d0) >>> 0);
+  const odds = Object.entries(weather).filter(([, w]) => w > 0);
+  let roll = wrng.next() * odds.reduce((n, [, w]) => n + w, 0), sky = 'none';
+  for (const [k, w] of odds) if ((roll -= w) < 0) { sky = k; break; }
+  const wallSlots = (t) => (db.rooms[t]?.slots ?? []).filter((s) => fits(s, 'wall'));
+  const ghostSlots = wallSlots(db.rooms.gallery ? 'gallery' : Object.keys(db.rooms).find((t) => wallSlots(t).length));
+  out.forEach((r) => {
+    const has = wrng.next() < (windows.roomChance ?? 0), two = wrng.next() < (windows.twoChance ?? 0);
+    const a = wrng.next(), b = wrng.next();
+    if (!has || (r.kind !== 'paintings' && r.kind !== 'ghost')) return;
+    const used = new Set(r.items.map((it) => it.slot));
+    const free = (r.kind === 'ghost' ? ghostSlots : wallSlots(r.template)).filter((s) => !used.has(s.id));
+    if (!free.length) return;
+    const first = free[Math.floor(a * free.length)], rest = free.filter((s) => s !== first);
+    const picks = two && rest.length ? [first, rest[Math.floor(b * rest.length)]] : [first];
+    r.windows = picks.sort((p, q) => p.x - q.x).map((s) => ({ x: s.x, y: s.y }));
+  });
+
   // Picked last so adding/removing loops never changes a seed's layout.
   const loops = ambience.length > 1 ? ambience.filter((a) => a !== avoidAmbience) : ambience;
-  return { seed: seed >>> 0, level, ambience: loops.length ? rng.pick(loops) : null, rooms: out, keys };
+  return { seed: seed >>> 0, level, ambience: loops.length ? rng.pick(loops) : null, weather: sky, rooms: out, keys };
 }
 
 // ?level=N starts at level N (for testing).

@@ -1,5 +1,5 @@
 // Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, dark rooms
-// (light switch, ceiling light, screamer rooms), lever rooms, HUD state.
+// (light switch, ceiling light, screamer rooms), lever rooms, windows + weather (gusts, thunder, faces), HUD state.
 // Produces a frame description for Renderer.
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
@@ -77,6 +77,29 @@ function dying(t) {
   return Math.sin(t * 97) + Math.sin(t * 41) > 0 ? 1 : 0.12;
 }
 
+// Lightning brightness 0..1, t = seconds since the thunder: a few hard flashes, then it fades. Epilepsy mode: one soft
+// swell and fade, no flashing.
+function lightning(t) {
+  if (settings.epilepsy) return t < 0.25 ? 0.45 * (t / 0.25) : 0.45 * Math.exp(-(t - 0.25) * 4);
+  if (t < 0.06) return 1;
+  if (t < 0.13) return 0.1;
+  if (t < 0.24) return 0.85;
+  if (t < 0.3) return 0.2;
+  if (t < 0.36) return 0.6;
+  return 0.6 * Math.exp(-(t - 0.36) * 6);
+}
+const LIGHTNING_S = 1.5; // after this lightning() is ~0
+
+// How shut the shutters are, 0 (open, folded flat) .. 1, t = seconds since the gust began: they swing in faster and
+// faster, hit at slamAtS, spring back a little and settle.
+function shutK(t) {
+  const W = CONFIG.weather, start = W.slamAtS - W.swingS;
+  if (t <= start) return 0;
+  if (t < W.slamAtS) return ((t - start) / W.swingS) ** 2;
+  const q = (t - W.slamAtS) / W.bounceS;
+  return q >= 1 ? 1 : 1 - W.bounce * Math.sin(Math.PI * q) * (1 - q);
+}
+
 // A screamer image filling the screen: flashing, jittering and pulsing in size. t = seconds since it appeared.
 // Epilepsy mode: shown steady, slowly growing, with no flashing or jitter.
 function screamerOverlay(img, t, holdS) {
@@ -127,6 +150,12 @@ export class Game {
     this.fakeAt = null;   // performance.now() ms of the next false alarm in this room, or null (see falseAlarm)
     this.fake = null;     // false alarm running: { t, offS }, or null
     this.wait = 0;        // seconds the screen stays black between rooms after the current door (phase 'wait')
+    // Weather (world.weather, CONFIG.weather). Windows are this.room.windows.
+    this.gustAt = null;   // performance.now() ms of the next gust in this room (windy, open windows), or null
+    this.gust = null;     // gust running: { t, slammed }, or null
+    this.thunderAt = null; // performance.now() ms of the next thunder (storm), or null
+    this.storm = null;    // lightning running: { t }, or null
+    this.face = null;     // a face outside a window: { win: index into room.windows, t }, or null
     this.screamer = null; // image shown while dead
   }
 
@@ -145,6 +174,8 @@ export class Game {
     this.lit = new Set();       // dark rooms whose light switch is on
     this.leverPos = new Map();  // lever room -> [0 | 1 per lever] (0 = up, 1 = down), kept when you leave the room
     this.leverHold = 0;         // seconds left before the levers snap back up after a wrong try
+    this.shut = new Set();      // rooms whose window shutters the wind has slammed shut
+    this.gust = null;
     this.ghost = null;
     this.msg = null;
     this.enterRoom(0);
@@ -156,6 +187,8 @@ export class Game {
       const { id, x, y } = this.ghost;
       this.lingering.set(this.roomIndex, { id, x, y, goneAt: now() + between(CONFIG.ghost.lingerS) * 1000 });
     }
+    // Leaving while a gust blows: it still slams that room's shutters behind you.
+    if (this.gust && this.roomIndex !== i) this.shut.add(this.roomIndex);
     this.roomIndex = i;
     this.visited.add(i);
     const spec = this.world.rooms[i];
@@ -208,7 +241,8 @@ export class Game {
     if (leverDoor && !this.leverPos.has(i)) this.leverPos.set(i, leverDoor.e.levers.map(() => 0));
     this.leverHold = 0;
     for (const it of items) if (it.lever !== undefined) it.leverT = this.leverPos.get(i)[it.lever];
-    this.room.sw = spec.dark ? this.makeSwitch(spec, items) : null;
+    this.room.windows = (spec.windows ?? []).map((w) => this.makeWindow(w, this.shut.has(i))).filter(Boolean);
+    this.room.sw = spec.dark ? this.makeSwitch(spec, [...items, ...this.room.windows]) : null;
     this.markExplored();
     this.hover = null;
     this.phase = 'in';
@@ -235,6 +269,13 @@ export class Game {
       : null;
     this.fake = null;
     this.fakeAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' ? this.nextFalseAlarm(CONFIG.falseAlarm.graceS) : null;
+    // Weather: gusts only where a window is still open; thunder anywhere.
+    const W = CONFIG.weather, sky = this.world.weather;
+    this.gust = null;
+    this.storm = null;
+    this.face = null;
+    this.gustAt = sky === 'windy' && this.outsideOpen() ? this.nextWeather(W.gustPerMin, W.gustGraceS) : null;
+    this.thunderAt = sky === 'storm' ? this.nextWeather(W.thunderPerMin, W.thunderGraceS) : null;
     this.onRoomChange?.(this);
   }
 
@@ -242,13 +283,15 @@ export class Game {
   shiftClock(ms) {
     if (this.spawnAt !== null) this.spawnAt += ms;
     if (this.fakeAt !== null) this.fakeAt += ms;
+    if (this.gustAt !== null) this.gustAt += ms;
+    if (this.thunderAt !== null) this.thunderAt += ms;
     for (const l of this.lingering.values()) l.goneAt += ms;
   }
 
-  // performance.now() ms of the earliest wall-clock event in this room (random ghost, false alarm), or null.
-  // main.js wakes the sleeping loop then.
+  // performance.now() ms of the earliest wall-clock event in this room (random ghost, false alarm, gust, thunder), or
+  // null. main.js wakes the sleeping loop then.
   nextTimer() {
-    const t = [this.spawnAt, this.fakeAt].filter((x) => x !== null);
+    const t = [this.spawnAt, this.fakeAt, this.gustAt, this.thunderAt].filter((x) => x !== null);
     return t.length ? Math.min(...t) : null;
   }
 
@@ -271,6 +314,77 @@ export class Game {
     this.fakeAt = this.nextFalseAlarm(F.graceS + CONFIG.ghost.lampOffS + this.fake.offS + F.backS);
     if (this.hover !== 'back' && this.hover !== 'pill') this.hover = null;
     this.onSfx?.('flashlight');
+  }
+
+  // When the next gust or thunder comes: exponential waiting time (perMin per level), at least graceS from now.
+  nextWeather(perMinList, graceS) {
+    const perMin = perLevel(perMinList, this.world.level ?? 1);
+    return perMin > 0 ? now() + (graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000 : null;
+  }
+
+  // A window of the current room, centred on (x, y) (world.js), pushed up off the floor like a painting. Same shape as
+  // a room item (it never glows or reacts to taps), plus close = how shut its shutters are (0..1).
+  makeWindow({ x, y }, shut) {
+    const sprite = this.assets.sprites.get('window');
+    if (!sprite) return null;
+    const def = this.db.items.window ?? {}, s = def.scale ?? 1, w = sprite.w * s, h = sprite.h * s;
+    const cy = Math.min(y, floorLineY() - CONFIG.room.wallMargin - h / 2), x0 = x - w / 2, y0 = cy - h / 2;
+    return {
+      win: true, id: 'window', sprite, s, cx: x, cy, x0, y0, depth: def.depth ?? 2, glow: 0, shake: 0, clip: 2,
+      explored: false, close: shut ? 1 : 0,
+      rect: [x0 - sprite.ox * s, y0 - sprite.oy * s, sprite.tw * s, sprite.th * s],
+    };
+  }
+
+  // The two shutters of window `w` as room-item-like objects for frame(), each half the frame's width when shut. They
+  // hang on the frame's outer edges and grow toward the middle with w.close (the right one is mirrored: negative
+  // rect width). None while open.
+  shutters(w) {
+    const ds = this.assets.sprites.get('window_door');
+    if (!ds || w.close < 0.01) return [];
+    const b = w.sprite.box, db = ds.box, def = this.db.items.window_door ?? {};
+    const left = w.x0 + b[0] * w.s, right = w.x0 + b[2] * w.s, top = w.y0 + b[1] * w.s, h = (b[3] - b[1]) * w.s;
+    const sx = ((right - left) / 2 / (db[2] - db[0])) * w.close, sy = h / (db[3] - db[1]);
+    return [[left, 1], [right, -1]].map(([hinge, dir]) => {
+      const x = hinge - (ds.ox + db[0]) * sx * dir, y = top - (ds.oy + db[1]) * sy;
+      const half = ((db[2] - db[0]) * sx) / 2;
+      return {
+        sprite: ds, s: sy, cx: hinge + dir * half, cy: top + h / 2, depth: def.depth ?? 0, glow: 0, shake: w.shake,
+        clip: 2, explored: false, rect: [x, y, ds.tw * sx * dir, ds.th * sy],
+      };
+    });
+  }
+
+  // True when the current room has a window whose shutters are open: outside sounds are clear (main.js).
+  outsideOpen() {
+    return !!this.room?.windows.length && !this.shut.has(this.roomIndex);
+  }
+
+  // True when a gust or thunder can start now (otherwise it is tried again a bit later).
+  canWeather() {
+    return this.phase === 'idle' && !this.jump && !this.gust && !this.storm;
+  }
+
+  // A gust of wind: slamAtS seconds into its sound the shutters of every window here slam shut (see update()). Also
+  // the debug W key.
+  windGust() {
+    if (!this.outsideOpen() || this.gust) return;
+    this.gust = { t: 0, slammed: false };
+    this.gustAt = null; // the windows will be shut: no more gusts here
+    this.onSfx?.('windGust');
+    this.onSfx?.('windowClose', CONFIG.weather.slamAtS); // sample-accurate, even if the frame rate stutters
+  }
+
+  // Thunder: the lightning lights the room through its open windows, and sometimes a face is outside one of them.
+  // Stay escapeS seconds more and a screamer jumps out. Also the debug T key (Shift+T: always a face).
+  thunder(forceFace = false) {
+    const W = CONFIG.weather;
+    this.storm = { t: 0 };
+    this.thunderAt = this.world.weather === 'storm' ? this.nextWeather(W.thunderPerMin, W.thunderGraceS) : null;
+    this.onSfx?.('thunder');
+    const open = this.outsideOpen() ? this.room.windows : [];
+    if (open.length && !this.face && !this.ghost && (forceFace || Math.random() < perLevel(W.faceChance, this.world.level ?? 1)))
+      this.face = { win: (Math.random() * open.length) | 0, t: 0 };
   }
 
   // True when a false alarm can start now: a light is on (flashlight, or a lit dark room's ceiling light) and
@@ -378,6 +492,10 @@ export class Game {
     this.spawnAt = null;
     this.fake = null;
     this.fakeAt = null;
+    this.gustAt = null;
+    this.thunderAt = null;
+    this.storm = null;
+    this.face = null;
     this.msg = null;
     this.hover = null;
     this.jump = null;
@@ -893,6 +1011,47 @@ export class Game {
       }
       busy = true;
     }
+    // Weather: gusts slam the shutters, thunder flashes lightning, a face outside waits for you to leave.
+    if (this.phase === 'idle') {
+      if (this.gustAt !== null && now() >= this.gustAt) {
+        if (this.canWeather()) this.windGust();
+        else this.gustAt = now() + 2000;
+      }
+      if (this.thunderAt !== null && now() >= this.thunderAt) {
+        if (this.canWeather()) this.thunder();
+        else this.thunderAt = now() + 2000;
+      }
+    }
+    if (this.gust) {
+      const Gu = this.gust, W = CONFIG.weather;
+      Gu.t += dt;
+      const k = shutK(Gu.t);
+      for (const w of this.room.windows) w.close = k;
+      if (!Gu.slammed && Gu.t >= W.slamAtS) {
+        Gu.slammed = true; // the bang (sfx windowClose was scheduled for this moment)
+        this.shut.add(this.roomIndex);
+        for (const w of this.room.windows) w.shake = 0.6;
+        this.onRoomChange?.(this); // main.js: muffle the outside now
+      }
+      if (Gu.t >= W.slamAtS + W.bounceS) this.gust = null;
+      busy = true;
+    }
+    if (this.storm) {
+      this.storm.t += dt;
+      if (this.storm.t >= LIGHTNING_S) this.storm = null;
+      busy = true;
+    }
+    if (this.face) {
+      this.face.t += dt;
+      // Still here (not on the way out through a door or back): the face jumps in.
+      if (this.face.t >= CONFIG.weather.escapeS && this.phase === 'idle' && !this.jump) {
+        this.face = null;
+        this.jump = { img: this.pickScreamer(), t: -1e-3 };
+        this.hover = null;
+      }
+      busy = true;
+    }
+
     if (this.ghost && this.phase !== 'end' && this.phase !== 'wait') {
       const G = this.ghost;
       G.t += dt;
@@ -958,7 +1117,7 @@ export class Game {
     }
 
     const g = CONFIG.glow;
-    const glowing = [...this.room.items, ...this.room.loot];
+    const glowing = [...this.room.items, ...this.room.loot, ...this.room.windows];
     if (this.room.sw) glowing.push(this.room.sw);
     for (const it of glowing) {
       const target = this.hover === it ? 1 : 0;
@@ -1053,6 +1212,22 @@ export class Game {
       return out;
     };
     const items = [];
+    // Windows: sky (self-lit, brighter in lightning), the face if one is out there, shutters, then the frame on top.
+    const Wn = CONFIG.windows, bolt = this.storm ? lightning(this.storm.t) : 0;
+    const windows = this.phase === 'end' ? [] : this.room.windows;
+    const skyGain = this.exposure * (Wn.sky + bolt * Wn.lightning.sky);
+    windows.forEach((w, i) => {
+      const shakeX = w.shake > 0 ? Math.sin(w.shake * 40) * 10 * w.shake : 0;
+      const plain = (id) => {
+        const sp = this.assets.sprites.get(id);
+        if (sp) items.push({ sprite: sp, rect: [w.rect[0] + shakeX, w.rect[1], w.rect[2], w.rect[3]],
+          shadow: [0, 0, 0, 0], glow: [0, 0, 0, 0], glowP: [0, 0], clip: 2, fx: [1, 1, skyGain, 0] });
+      };
+      plain('window_sky');
+      if (this.face?.win === i) plain('window_face');
+      for (const sh of this.shutters(w)) items.push(draw(sh));
+      items.push(draw(w));
+    });
     if (this.phase !== 'end') {
       // The switch is lit like everything else, so in the dark only its hover glow gives it away.
       if (this.room.sw) items.push(draw(this.room.sw));
@@ -1077,8 +1252,14 @@ export class Game {
       });
     }
     const lt = D.light;
+    // Window light: moonlight through the open part of each window (the shutters block it), whiter and much brighter
+    // in a lightning flash. One colour for both windows, weighted by moonlight vs lightning.
+    const moon = Wn.light.amount, flashA = bolt * Wn.lightning.amount, mix = flashA / (moon + flashA);
+    const winColor = Wn.light.color.map((c, k) => c + (Wn.lightning.color[k] - c) * mix);
+    const winLights = windows.slice(0, 2).map((w) => [w.cx, w.cy + Wn.light.drop,
+      Wn.light.reach * (1 + (Wn.lightning.reach - 1) * bolt), this.exposure * (1 - w.close) * (moon + flashA)]);
     return {
-      light: { x: L.x, y: L.y, r: f.radius, exposure: flash, room: [lt.x, lt.y, lt.reach, ceil] },
+      light: { x: L.x, y: L.y, r: f.radius, exposure: flash, room: [lt.x, lt.y, lt.reach, ceil], windows: winLights, winColor },
       bg: this.phase === 'end' ? null : this.room.bg,
       items,
       overlay: null,

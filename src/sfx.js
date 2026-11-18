@@ -5,10 +5,11 @@
 // preload: 'all'  = decode the whole pool at boot (short sounds)
 //          'one'  = keep ONE random sound decoded; after it plays, swap in another (long sounds: saves memory)
 //          'none' = registered only; decoded the first time it is played (it then plays late, once)
+// bus: mixer bus (src/audio.js), 'sfx' by default; 'outside' = muffled with the weather where no window is open
 import { CONFIG } from './config.js';
 import { loadSfx, playSfx, hasSfx, unloadSfx, audioNamesWithPrefix } from './audio.js';
 
-const roles = new Map(); // role -> { names, preload, volume, last }
+const roles = new Map(); // role -> { names, preload, volume, bus, last }
 const pick = (arr) => arr[(Math.random() * arr.length) | 0];
 
 export async function initSfx() {
@@ -16,7 +17,7 @@ export async function initSfx() {
   for (const [role, def] of Object.entries(CONFIG.sfx)) {
     const names = audioNamesWithPrefix(def.files);
     if (!names.length) console.warn(`[casa] sfx "${role}": no sounds start with "${def.files}"`);
-    const r = { names, preload: def.preload ?? 'all', volume: def.volume ?? 1, last: null };
+    const r = { names, preload: def.preload ?? 'all', volume: def.volume ?? 1, bus: def.bus ?? 'sfx', last: null };
     roles.set(role, r);
     if (r.preload === 'all') jobs.push(names);
     if (r.preload === 'one' && names.length) jobs.push([pick(names)]);
@@ -32,13 +33,13 @@ export function playRole(role, delay = 0) {
   if (!ready.length) {
     // Nothing decoded yet ('none', or the 'one' load failed): decode one and play it when it's ready.
     const name = pick(r.names);
-    loadSfx([name]).then(() => playSfx(name, r.volume));
+    loadSfx([name]).then(() => playSfx(name, r.volume, 0, r.bus));
     return;
   }
   const options = ready.length > 1 ? ready.filter((n) => n !== r.last) : ready;
   const name = pick(options);
   r.last = name;
-  const dur = playSfx(name, r.volume, delay);
+  const dur = playSfx(name, r.volume, delay, r.bus);
   if (r.preload === 'one' && r.names.length > 1) {
     // Swap: decode a different one for next time, then free this one (a playing source keeps its own buffer).
     const next = pick(r.names.filter((n) => n !== name));

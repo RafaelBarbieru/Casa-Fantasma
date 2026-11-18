@@ -1,5 +1,5 @@
 // GLSL ES 1.00 (WebGL1) — runs on every WebGL-capable phone/tablet/desktop.
-// The light "mask" (flashlight + the ceiling light of a lit dark room) is evaluated per-fragment in every draw
+// The light "mask" (flashlight + the ceiling light of a lit dark room + moonlight from up to two windows) is evaluated per-fragment in every draw
 // (lightAt) instead of a separate fullscreen darkening pass: same look, zero extra overdraw.
 
 export const VS = `
@@ -32,9 +32,16 @@ uniform vec4 uLight;   // beam x, y (scene px), radius, exposure
 uniform vec4 uLightP;  // ambient, softness, hotspot, gain
 uniform vec4 uRoomLight;  // ceiling light x, y (scene px), reach px, amount (0 = off)
 uniform vec3 uRoomLightP; // ambient, peak, vertical stretch
+uniform vec4 uWin0;    // window light: x, y (scene px), reach px, amount (0 = none)
+uniform vec4 uWin1;
+uniform vec3 uWinC;    // window light colour (cold moonlight, whiter in a lightning flash)
 uniform vec3 uTint;
 uniform float uNoise;  // 1 = add the fine noise dither, 0 = off (the PS1 post pass dithers instead)
-float lightAt(vec2 p) {
+float winAt(vec4 w, vec2 p) {
+  float k = 1.0 - smoothstep(0.0, 1.0, length((p - w.xy) * vec2(0.85, 1.0)) / w.z);
+  return w.w * k * k;
+}
+vec3 lightAt(vec2 p) {
   float d = length(p - uLight.xy) / uLight.z;
   float spot = 1.0 - smoothstep(1.0 - uLightP.y, 1.0, d);
   float hot = 1.0 - smoothstep(0.0, 0.5, d);
@@ -42,7 +49,7 @@ float lightAt(vec2 p) {
   // Ceiling light: a wide, soft pool from above. Never reaches full brightness at the edges.
   float r = length((p - uRoomLight.xy) * vec2(1.0, uRoomLightP.z)) / uRoomLight.z;
   float room = (uRoomLightP.x + uRoomLightP.y * (1.0 - smoothstep(0.0, 1.0, r))) * uRoomLight.w;
-  return flash + room;
+  return uTint * (flash + room) + uWinC * (winAt(uWin0, p) + winAt(uWin1, p));
 }
 // Interleaved gradient noise: kills banding in the dark gradients (full-res mode only).
 float dither() {
@@ -66,7 +73,7 @@ void main() {
   vec3 floorC = texture2D(uFloor, fuv).rgb;
   vec3 c = vP.y < fy ? wall : floorC;
   c *= 1.0 - uSeam.x * exp(-abs(vP.y - fy) / uSeam.y);
-  gl_FragColor = vec4(c * uTint * lightAt(vP) + dither(), 1.0);
+  gl_FragColor = vec4(c * lightAt(vP) + dither(), 1.0);
 }`;
 
 // One draw per item: drop shadow (offset, mip-blurred alpha) + outer glow (mip-dilated alpha) + sprite.
@@ -125,14 +132,15 @@ void main() {
   }
   float under = (1.0 - s.a) * step(vUv.y, uClip);
   float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under * keepSh;
-  float L = mix(lightAt(vP), 1.0, uFx.x);
-  vec3 col = s.rgb * mix(uTint, vec3(1.0), uFx.x) * L * uFx.z * (1.0 + uGlowP.y * uGlow.a);
+  vec3 L = mix(lightAt(vP), vec3(1.0), uFx.x);
+  float Lm = min(max(L.r, max(L.g, L.b)), 1.0);
+  vec3 col = s.rgb * L * uFx.z * (1.0 + uGlowP.y * uGlow.a);
   if (uCrack.z > 0.0) col *= 1.0 - crack(vUv) * uCrack.z * uCrackP.y;
-  col = mix(col, uTearC * mix(uTint, vec3(1.0), uFx.x) * L * s.a, rim);
+  col = mix(col, uTearC * L * s.a, rim);
   if (uGlow.a > 0.001) {
     float b = texture2D(uTex, vUv, uGlowP.x).a * keepGlow;
     float g = smoothstep(0.0, 0.5, b) * under * uGlow.a;
-    col += uGlow.rgb * g * (0.3 + 0.7 * min(L, 1.0));
+    col += uGlow.rgb * g * (0.3 + 0.7 * Lm);
   }
   gl_FragColor = vec4(col + dither() * s.a, (s.a + sh) * (1.0 - uFx.w)) * uFx.y;
 }`;

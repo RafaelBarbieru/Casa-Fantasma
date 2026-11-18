@@ -9,6 +9,8 @@ const NO_ROT = [0, 0, 0];
 const NO_CRACK = [0, 0, 0, 0];
 const NO_TEAR = [0, 0, 0, 0];
 const NO_ROOM_LIGHT = [0, 0, 1, 0];
+const NO_WIN = [0, 0, 1, 0];
+const NO_WIN_C = [0, 0, 0];
 
 export class Renderer {
   static create(canvas) {
@@ -178,13 +180,17 @@ export class Renderer {
     const rl = CONFIG.darkRooms.light;
     gl.uniform4fv(u.uRoomLight, light.room ?? NO_ROOM_LIGHT);
     gl.uniform3f(u.uRoomLightP, rl.ambient, rl.peak, rl.stretch);
+    const win = light.windows ?? [];
+    gl.uniform4fv(u.uWin0, win[0] ?? NO_WIN);
+    gl.uniform4fv(u.uWin1, win[1] ?? NO_WIN);
+    gl.uniform3fv(u.uWinC, light.winColor ?? NO_WIN_C);
     gl.uniform3f(u.uTint, f.tint[0], f.tint[1], f.tint[2]);
     gl.uniform1f(u.uNoise, CONFIG.ps1.enabled ? 0 : 1);
     gl.uniform1i(u.uTex, 0);
   }
 
-  // frame = { light:{x,y,r,exposure, room?:[x,y,reach,amount]}, overlay?:{img,rect}, bg: { wall, floor, wallTile, floorTile } | null,
-//           items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten], clip,
+  // frame = { light:{x,y,r,exposure, room?:[x,y,reach,amount], windows?:[[x,y,reach,amount] x0-2], winColor?:[r,g,b]}, overlay?:{img,rect}, bg: { wall, floor, wallTile, floorTile } | null,
+//           items: [{ sprite, rect:[x,y,w,h] (w < 0 = mirrored), shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten], clip,
 //                     fx?, rot?:[radians, pivotX, pivotY], crack?:[u, v, amount, seed],
 //                     tear?:[[sx, sy, threshold, seed], [boxU, boxV, boxW, boxH], [aspect, dmax, jag, rim]] }] }
   // hud = Hud (canvas + version) or null

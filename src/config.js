@@ -182,6 +182,10 @@ export const CONFIG = {
     lever: { files: 'sfx/lever0' },             // a lever is pulled up or down (lever01, lever02...; not lever_fail)
     leverFail: { files: 'sfx/lever_fail' },     // lever door tried with the wrong combination: the levers snap up
     leverSuccess: { files: 'sfx/lever_success' }, // lever door tried with the right combination: it opens
+    // Weather (CONFIG.weather). bus 'outside': muffled like the weather loop where no window is open.
+    windGust: { files: 'sfx/wind_gust', bus: 'outside' },       // a gust of wind (windy weather)
+    windowClose: { files: 'sfx/window_close', bus: 'outside' }, // the gust slams the shutters
+    thunder: { files: 'sfx/thunder', bus: 'outside' },          // thunder + lightning (storm)
     uiSelect: { files: 'sfx/ui_select' },       // menu: pointing at an option (or arrow keys)
     uiSubmit: { files: 'sfx/ui_submit' },       // menu: clicking an option
   },
@@ -283,6 +287,51 @@ export const CONFIG = {
       fit: [0.75, 0.4], // ...but at most this share of the hiding painting's width and height
       paint: [150, 24, 18], // paint colour (RGB 0-255)
     },
+  },
+
+  // Windows (src/world.js + src/game.js, art: data/items.json "window" + "window_door"). Only on walls without doors:
+  // painting rooms (in a free painting spot) and ghost rooms, on any level. The glass shows the night sky and lets a
+  // little cold light into the room. Behind the frame hang two wooden shutters, open (folded flat against the wall,
+  // invisible) until the wind slams them (weather.windy).
+  windows: {
+    roomChance: 0.35,   // chance a painting or ghost room has a window (when it has a free painting spot)...
+    twoChance: 0.35,    // ...and chance it has two (when it has two free spots)
+    // Moonlight from an open window: a soft pool around it, centred `drop` scene px below the window's centre.
+    light: { color: [0.45, 0.55, 0.85], amount: 0.3, reach: 650, drop: 120 },
+    sky: 0.6,           // brightness of the night sky seen through the glass
+    // Lightning (weather.storm): at its peak the window light gets this much brighter and whiter, and reaches
+    // `reach` times further; the sky gets `sky` brighter.
+    lightning: { color: [0.85, 0.9, 1.0], amount: 2.4, reach: 1.8, sky: 9 },
+  },
+
+  // Weather: every level gets one (picked from the world seed). Its loop plays all the time; in a room with an open
+  // window it sounds clear, anywhere else muffled, as if through the walls. Per-level lists: index 0 = level 1, the
+  // last value repeats.
+  weather: {
+    chances: { none: 1, windy: 1, storm: 1 }, // relative odds of each weather
+    loops: { windy: 'ambience/wind_loop', storm: 'ambience/rain_loop' }, // exact sound names (path in audio-src/)
+    loopVolume: 0.8,
+    fadeInS: 4,
+    fadeOutS: 2,
+    // Muffled = low-pass filtered at `hz` and turned down to `gain`; `s` = how fast it changes when you change rooms.
+    // Also applies to the thunder and the wind sounds (CONFIG.sfx roles with bus: 'outside').
+    muffle: { hz: 450, gain: 0.6, s: 0.6 },
+    // Windy: in a room with open windows a gust comes now and then (sfx windGust). slamAtS seconds into it the
+    // shutters slam shut (sfx windowClose): they swing in over swingS and land exactly then, then bounce a little.
+    // They stay shut for the rest of the level: no more light from that room's windows, and it is muffled.
+    gustPerMin: [0.6, 0.8, 1, 1.2, 1.4], // gusts per minute spent in a room with open windows
+    gustGraceS: 3,      // never in the first seconds after entering a room
+    slamAtS: 0.8,       // when the shutters hit (s from the start of the gust sound; sfx/wind_gust peaks there)
+    swingS: 0.14,
+    bounceS: 0.22,
+    bounce: 0.08,       // share of the way they spring back open after the hit
+    // Storm: thunder now and then in any room (sfx thunder). Where a window is open the lightning lights the room up,
+    // and sometimes (faceChance) a face is outside the window. If you're still in the room escapeS seconds later, a
+    // screamer jumps out (sfx screamerShort, no damage).
+    thunderPerMin: [1, 1.2, 1.4, 1.6],
+    thunderGraceS: 4,
+    faceChance: [0.0, 0.0, 0.3, 0.4, 0.5],
+    escapeS: 1.5,
   },
 
   // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the main menu shows (START begins a new run at level 1).

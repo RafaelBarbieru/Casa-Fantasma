@@ -10,7 +10,7 @@ import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex, setVolumes } from 
 import { initSfx, playRole } from './sfx.js';
 import { startHeartbeat, beatEnvelope } from './heartbeat.js';
 import { CONFIG } from './config.js';
-import { setLevelAmbience, startRandomAmbience, playRandomAmbience, startSilence, ambienceLoops, ambiencePool } from './ambience.js';
+import { setLevelAmbience, startRandomAmbience, playRandomAmbience, startSilence, ambienceLoops, ambiencePool, setOutside } from './ambience.js';
 import { Menu } from './menu.js';
 import { settings, loadSettings } from './settings.js';
 
@@ -39,7 +39,8 @@ async function boot() {
   const hud = new Hud(assets.sprites);
   // avoidAmbience: the previous level's loop, so two levels in a row never share one.
   const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
-    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, levers: CONFIG.levers, level,
+    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, levers: CONFIG.levers,
+    windows: CONFIG.windows, weather: CONFIG.weather.chances, level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   // sound: false when the main menu is shown next (its START plays it).
@@ -70,7 +71,11 @@ async function boot() {
     regenerate: () => startLevel((Math.random() * 2 ** 32) >>> 0, game.world.level),
     nextLevel: () => game.onWorldEnd(),
   });
-  game.onRoomChange = () => debug.refresh();
+  // Outside sounds (weather loop, thunder, wind) are clear only in a room with an open window.
+  game.onRoomChange = () => {
+    debug.refresh();
+    setOutside(game.outsideOpen());
+  };
 
   // Menus. Main: after the start overlay, over the dimmed start room (the game runs behind it: the flashlight follows
   // the pointer, nothing in the room reacts). START begins the first level. Pause: Esc or the HUD pause button once

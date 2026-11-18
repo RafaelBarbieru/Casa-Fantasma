@@ -2,7 +2,7 @@
 // one-shot sounds from CONFIG.ambience.random.pool at random intervals. One-shots use Math.random
 // (not the world seed) on purpose: they should not repeat identically for the same seed.
 import { CONFIG } from './config.js';
-import { playLoop, playSfx, audioUnlocked, audioNamesWithPrefix, duckLoop } from './audio.js';
+import { playLoop, playSfx, audioUnlocked, audioNamesWithPrefix, duckLoop, primeLoop, muffleOutside } from './audio.js';
 
 let timer = 0;
 let lastShot = null;
@@ -14,10 +14,21 @@ export const ambiencePool = () => audioNamesWithPrefix(CONFIG.ambience.random.po
 
 const between = ([a, b]) => a + Math.random() * (b - a);
 
-// Start (or switch to) the ambience of this world/level.
+// Start (or switch to) the ambience of this world/level: its loop, and its weather's loop (CONFIG.weather.loops; none
+// for weather 'none' or a missing sound).
 export function setLevelAmbience(world) {
-  const a = CONFIG.ambience;
+  const a = CONFIG.ambience, W = CONFIG.weather;
   playLoop(world.ambience, { volume: a.loopVolume, fadeIn: a.fadeInS, fadeOut: a.fadeOutS });
+  const known = (n) => n && audioNamesWithPrefix(n).includes(n);
+  const name = W.loops[world.weather] ?? null;
+  if (name && !known(name)) console.warn(`[casa] weather "${world.weather}": no sound named "${name}"`);
+  primeLoop('weather', Object.values(W.loops).find(known));
+  playLoop(known(name) ? name : null, { volume: W.loopVolume, fadeIn: W.fadeInS, fadeOut: W.fadeOutS }, 'weather');
+}
+
+// Outside sounds (weather loop, thunder, wind) clear in a room with an open window, muffled anywhere else.
+export function setOutside(open) {
+  muffleOutside(!open, CONFIG.weather.muffle);
 }
 
 // Begin the random one-shot and silence timers (call once, after unlockAudio()). silenceHook() is asked before

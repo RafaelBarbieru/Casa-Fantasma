@@ -19,7 +19,10 @@ const buffers = new Map();
 
 // Mixer: every sound -> 'sfx' or 'ambience' bus -> 'master' bus -> speakers. setVolumes() drives the bus gains
 // (main menu > Options). vols holds the gains too, for the no-Web-Audio fallback (bed element volume).
+// 'outside' = sounds from outside the house (thunder, wind): low-pass filter -> gain -> 'sfx', muffled by
+// muffleOutside() together with the 'weather' bed.
 const vols = { master: 1, sfx: 1, ambience: 1 };
+const OPEN_HZ = 20000; // low-pass cutoff when not muffled (transparent)
 let buses = null;
 function bus(name) {
   if (!buses) {
@@ -28,8 +31,19 @@ function bus(name) {
     buses = { master, sfx: ctx.createGain(), ambience: ctx.createGain() };
     buses.sfx.connect(master);
     buses.ambience.connect(master);
+    buses.outside = lowpass();
+    buses.outsideGain = ctx.createGain();
+    buses.outside.connect(buses.outsideGain);
+    buses.outsideGain.connect(buses.sfx);
   }
   return buses[name];
+}
+
+function lowpass() {
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = OPEN_HZ;
+  return f;
 }
 
 // Slider positions 0..1 -> gains. Squared: a rough loudness curve, so 50% sounds about half as loud.
@@ -38,7 +52,7 @@ export function setVolumes(s) {
     vols[k] = Math.max(0, Math.min(1, s[k])) ** 2;
     if (ctx) bus(k).gain.setTargetAtTime(vols[k], ctx.currentTime, 0.02);
   }
-  if (bed && !bed.gain) bed.el.volume = bedVolume * vols.master * vols.ambience;
+  for (const b of beds.values()) if (!b.gain) b.el.volume = b.volume * vols.master * vols.ambience;
 }
 
 // Fetch + decode SFX. Missing/undecodable files only warn, so audio never blocks the game.
@@ -92,78 +106,118 @@ export function playSfx(name, volume = 1, delay = 0, to = 'sfx') {
   return buf.duration;
 }
 
-// --- Looping bed (level ambience): ONE reused <audio> element, streamed (not decoded), routed through a
-// GainNode for fades. Reusing one element matters on iOS: it stays "unlocked" after the first gesture play.
+// --- Looping beds: 'level' (the level ambience) and 'weather' (wind / rain, muffled indoors: muffleOutside()).
+// Each is ONE reused <audio> element, streamed (not decoded), routed through a low-pass filter and a GainNode (fades).
+// Reusing elements matters on iOS: an element stays "unlocked" after its first play from a gesture (see primeLoop).
 let unlocked = false;
-let bed = null;      // { el, gain }
-let bedWant = null;  // { name, volume, fadeIn, fadeOut }: last requested bed (kept so unlock can start it)
-let bedName = null;  // what the element currently holds
-let bedToken = 0;    // invalidates pending swaps when a newer request arrives
-let bedVolume = 0;   // target volume of the fallback (no Web Audio) path, before the mixer
+const OUTSIDE = new Set(['weather']); // beds that muffleOutside() muffles
+const muffle = { on: false, hz: 450, gain: 0.6 };
+// key -> { el, gain, filter, want: { name, volume, fadeIn, fadeOut } | null (last request, kept so unlock can start
+// it), name (what the element holds), token (invalidates pending swaps), ducked, prime (iOS, see primeLoop), volume
+// (fallback without Web Audio: target before the mixer) }
+const beds = new Map();
 
-function getBed() {
-  if (bed) return bed;
+function getBed(key) {
+  let b = beds.get(key);
+  if (b) return b;
   const el = new Audio();
   el.loop = true;
   el.preload = 'auto';
-  let gain = null;
+  b = { key, el, gain: null, filter: null, want: null, name: null, token: 0, ducked: false, prime: null, volume: 0 };
   if (ctx) {
-    gain = ctx.createGain();
-    gain.gain.value = 0;
-    ctx.createMediaElementSource(el).connect(gain);
-    gain.connect(bus('ambience'));
+    b.filter = lowpass();
+    b.gain = ctx.createGain();
+    b.gain.gain.value = 0;
+    ctx.createMediaElementSource(el).connect(b.filter);
+    b.filter.connect(b.gain);
+    b.gain.connect(bus('ambience'));
+    if (OUTSIDE.has(key) && muffle.on) b.filter.frequency.value = muffle.hz;
   }
-  return (bed = { el, gain });
+  beds.set(key, b);
+  return b;
 }
 
+// Volume the bed should be at now: its requested volume, unless ducked (silences) or muffled.
+const bedTarget = (b) => (!b.want || b.ducked ? 0 : b.want.volume * (OUTSIDE.has(b.key) && muffle.on ? muffle.gain : 1));
+
 // Ramp bed volume to v over s seconds. Without Web Audio, falls back to a hard element.volume set.
-function rampBed(v, s) {
-  const { el, gain } = getBed();
-  if (!gain) { bedVolume = v; el.volume = v * vols.master * vols.ambience; return; }
-  const g = gain.gain, t = ctx.currentTime;
+function rampBed(b, v, s) {
+  if (!b.gain) { b.volume = v; b.el.volume = v * vols.master * vols.ambience; return; }
+  const g = b.gain.gain, t = ctx.currentTime;
   g.cancelScheduledValues(t);
   g.setValueAtTime(g.value, t);
   g.linearRampToValueAtTime(v, t + Math.max(0.01, s));
 }
 
-function startBed() {
-  const want = bedWant;
+function startBed(b) {
+  const want = b.want;
   if (!want || !unlocked) return;
-  const b = getBed();
-  const token = ++bedToken;
+  const token = ++b.token;
   const begin = () => {
-    if (token !== bedToken) return;
-    if (bedName !== want.name) {
-      bedName = want.name;
+    if (token !== b.token) return;
+    if (b.name !== want.name) {
+      b.name = want.name;
       b.el.src = audioUrl(want.name);
     }
     b.el.play().catch((e) => console.warn('[casa] ambience failed', want.name, e));
-    rampBed(want.volume, want.fadeIn);
+    rampBed(b, bedTarget(b), want.fadeIn);
   };
-  if (bedName && bedName !== want.name && !b.el.paused) {
-    rampBed(0, want.fadeOut);
+  if (b.name && b.name !== want.name && !b.el.paused) {
+    rampBed(b, 0, want.fadeOut);
     setTimeout(begin, want.fadeOut * 1000);
   } else begin();
 }
 
-// Request the looping ambience. Safe to call before unlockAudio(): it starts on unlock.
-// Same name as the current bed -> keeps playing (no restart); different -> fade out, swap, fade in.
-export function playLoop(name, { volume = 1, fadeIn = 2, fadeOut = 1.5 } = {}) {
-  bedWant = name ? { name, volume, fadeIn, fadeOut } : null;
-  if (!bedWant) {
-    ++bedToken;
-    if (bed) rampBed(0, fadeOut);
+// Request a looping bed (key 'level' or 'weather'); name null = fade it out and stop. Safe to call before
+// unlockAudio(): it starts on unlock. Same name as now -> keeps playing (no restart); different -> fade out, swap,
+// fade in.
+export function playLoop(name, { volume = 1, fadeIn = 2, fadeOut = 1.5 } = {}, key = 'level') {
+  const b = getBed(key);
+  b.want = name ? { name, volume, fadeIn, fadeOut } : null;
+  b.ducked = false;
+  if (!b.want) {
+    const token = ++b.token;
+    rampBed(b, 0, fadeOut);
+    setTimeout(() => token === b.token && b.el.pause(), fadeOut * 1000);
     return;
   }
-  if (bedName === name && bed && !bed.el.paused) { rampBed(volume, fadeIn); return; }
-  startBed();
+  if (b.name === name && !b.el.paused) { rampBed(b, bedTarget(b), fadeIn); return; }
+  startBed(b);
 }
 
-// Fade the looping ambience out (silent = true) or back to its volume, over s seconds. A new playLoop() also
+// iOS: a bed with nothing to play at the first gesture (e.g. no weather on the first level) is still played once,
+// silently, with this sound, so later levels may start it outside a gesture.
+export function primeLoop(key, name) {
+  if (name) getBed(key).prime = name;
+}
+
+// Fade every looping bed out (silent = true) or back to its volume, over s seconds. A new playLoop() also
 // brings it back.
 export function duckLoop(silent, s) {
-  if (!bed || !bedWant) return;
-  rampBed(silent ? 0 : bedWant.volume, s);
+  for (const b of beds.values()) {
+    if (!b.want) continue;
+    b.ducked = silent;
+    rampBed(b, bedTarget(b), s);
+  }
+}
+
+// Sounds from outside (the 'weather' bed and the 'outside' sfx bus): muffled = low-pass at hz and turned down to
+// gain, as heard through the walls; otherwise clear. s = how long the change takes.
+export function muffleOutside(on, { hz = 450, gain = 0.6, s = 0.5 } = {}) {
+  if (on === muffle.on && hz === muffle.hz && gain === muffle.gain) return;
+  Object.assign(muffle, { on, hz, gain });
+  if (!ctx) {
+    for (const b of beds.values()) if (OUTSIDE.has(b.key) && b.want) rampBed(b, bedTarget(b), s);
+    return;
+  }
+  const t = ctx.currentTime, tc = Math.max(0.01, s) / 3; // setTargetAtTime gets ~95% there after 3 time constants
+  bus('outside').frequency.setTargetAtTime(on ? hz : OPEN_HZ, t, tc);
+  bus('outsideGain').gain.setTargetAtTime(on ? gain : 1, t, tc);
+  for (const b of beds.values()) {
+    if (!OUTSIDE.has(b.key)) continue;
+    b.filter.frequency.setTargetAtTime(on ? hz : OPEN_HZ, t, tc);
+    if (b.want) rampBed(b, bedTarget(b), s);
+  }
 }
 
 export const audioUnlocked = () => unlocked;
@@ -173,17 +227,23 @@ export const audioUnlocked = () => unlocked;
 export function unlockAudio() {
   unlocked = true;
   if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
-  startBed();
+  for (const b of beds.values()) {
+    if (b.want) startBed(b);
+    else if (b.prime && !b.name) {
+      b.name = b.prime;
+      b.el.src = audioUrl(b.prime);
+      b.el.play().then(() => !b.want && b.el.pause()).catch(() => {});
+    }
+  }
 }
 
 // Mobile: silence everything while the tab is in the background.
 document.addEventListener('visibilitychange', () => {
   if (!unlocked) return;
-  if (document.hidden) {
-    ctx?.suspend().catch(() => {});
-    bed?.el.pause();
-  } else {
-    ctx?.resume().catch(() => {});
-    if (bedWant && bed && bedName === bedWant.name) bed.el.play().catch(() => {});
+  if (document.hidden) ctx?.suspend().catch(() => {});
+  else ctx?.resume().catch(() => {});
+  for (const b of beds.values()) {
+    if (document.hidden) b.el.pause();
+    else if (b.want && b.name === b.want.name) b.el.play().catch(() => {});
   }
 });

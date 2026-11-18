@@ -106,6 +106,32 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - The levers' size is `scale` of `lever_base` and `lever_handle` in `data/items.json` (keep them equal); their positions are the `lever-1`...`lever-5` spots of the `levers` layout.
 - Levels 1 and 2 keep exactly the same layouts as before for a given seed.
 
+### Windows and weather
+- Some rooms have one or two **windows** (`art-src/window.png`) on any level. Windows only go where there is no door: in painting rooms (in a free painting spot) and in ghost rooms. Through the glass you see the night sky, and an open window lets a little cold moonlight into the room.
+- Each window has two wooden **shutters** (`art-src/window_door.png`, the right one mirrored) hidden behind the frame. They start open (folded flat, invisible).
+- Every level has a **weather**: none, windy or storm. Windy plays `ambience/wind_loop`, storm plays `ambience/rain_loop`, all the time, on top of the level's ambience loop. In a room with an open window it sounds clear. Anywhere else it sounds muffled, as if heard through the walls (thunder and wind sounds too).
+- **Windy:** in a room with open windows, a gust comes now and then (`sfx/wind_gust`). Exactly 0.8 s into it, at the gust's loudest point, the shutters swing in from both sides and slam shut in the middle with a bang (`sfx/window_close`), then spring back a little. They stay shut for the rest of the level: the moonlight is gone and the room is muffled from then on. If you leave mid-gust, they slam behind you.
+- **Storm:** thunder now and then, in any room (`sfx/thunder`). Where a window is open, the lightning flashes the room bright through it. Sometimes a **face** is standing outside the window, a black silhouette only visible in the flash (drawn by the game, no art file). Leave the room within 1.5 s (any door, or back) or a short screamer jumps out (`sfx/screamer_short`, no damage).
+- In epilepsy mode the lightning is one soft swell instead of flashes.
+- Debug: the panel shows the weather and which rooms have windows (`x2` = two, `(shut)`). **W** = a gust now (in a room with open windows), **T** = thunder, **Shift+T** = thunder with a face at the window. Test seeds (level 1): `?seed=4` is windy, with a window in room 2 (the `door05` door of the first room); `?seed=7` is a storm, with a window in room 3 (the `door08` door).
+
+`src/config.js` → `windows`:
+- `roomChance`: how likely a painting or ghost room has a window (when it has a free painting spot). `twoChance`: how likely it has two.
+- `light`: the moonlight: `color`, `amount` (brightness), `reach` (scene px), `drop` (how far below the window its centre is).
+- `sky`: how bright the sky behind the glass is.
+- `lightning`: at the flash's peak the window light gets `amount` brighter, `reach` times wider, and turns `color`; the sky gets `sky` brighter.
+- The window's size is `scale` of `window` in `data/items.json`. The shutters always fit the window, whatever their own `scale`.
+
+`src/config.js` → `weather`:
+- `chances`: relative odds of each weather (`{ none: 1, windy: 1, storm: 1 }` = a third each; `windy: 0` = never windy).
+- `loops`: the sound for each weather (exact names). `loopVolume`, `fadeInS`, `fadeOutS`: as for the level ambience.
+- `muffle`: how muffled outside sounds are in rooms without an open window: `hz` (lower = duller), `gain` (volume), `s` (how fast it changes when you change rooms).
+- `gustPerMin`: per level, gusts per minute in a room with open windows. `gustGraceS`: none in the first seconds in a room.
+- `slamAtS`: when the shutters hit, in seconds from the start of the gust sound (change it if you replace `wind_gust`). `swingS`: how long they take to swing in (they land exactly at `slamAtS`). `bounceS`, `bounce`: the little spring back after the hit.
+- `thunderPerMin`: per level, thunder per minute. `thunderGraceS`: none in the first seconds in a room.
+- `faceChance`: per level, how likely a thunder brings a face (in a room with an open window). `escapeS`: seconds you have to get out.
+- Adding windows and weather didn't change any seed's layout.
+
 `src/config.js`:
 - `ghost`:
   - `roomChance`: per level, how likely a dead-end door leads to a ghost room.
@@ -295,6 +321,9 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/lever0` | a lever is pulled up or down (`lever01`, `lever02`...; not `lever_fail`/`lever_success`) |
   | `sfx/lever_fail` | a lever door is tried with the wrong combination |
   | `sfx/lever_success` | a lever door is tried with the right combination |
+  | `sfx/wind_gust` | a gust of wind (windy weather); the shutters slam 0.8 s into it |
+  | `sfx/window_close` | the shutters slam shut |
+  | `sfx/thunder` | thunder and lightning (storm) |
   | `sfx/ui_select` | menu: pointing at an option (or moving with the arrow keys) |
   | `sfx/ui_submit` | menu: clicking an option |
 
@@ -310,6 +339,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
     - `chance`: how likely each attempt is to actually play (1 = always).
     - `volume: [min, max]`: each play gets a random volume in this range.
   - With the debug overlay open (`?debug`), press **A** to hear a random one right away.
+  - The weather loops (`ambience/wind_loop`, `ambience/rain_loop`) are set in `weather.loops`, not here. Their names don't start with `level` or `random`, so they are never picked as a level loop or a random sound.
   - `silence`: the loop sometimes fades out completely, then comes back.
     - `firstDelayS`, `gapS`, `chance`: when it is tried, like the random sounds.
     - `holdS`: `[min, max]` seconds of silence. `fadeOutS`, `fadeInS`: how long the loop takes to go and to come back.

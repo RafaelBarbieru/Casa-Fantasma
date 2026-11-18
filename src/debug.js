@@ -1,7 +1,7 @@
 // Debug overlay. Toggle with ` (backquote) or start with ?debug in the URL.
 // Keys while visible: N = new random world (same level), L = skip to the next level, K = take every key,
 // B = jump back to the start room, A = play a random ambience one-shot, G = random ghost now, H = full health,
-// D = lose 20% health, P = get a pill.
+// D = lose 20% health, P = get a pill, W = wind gust (open windows), T = thunder (Shift+T: with a face at a window).
 import { CONFIG } from './config.js';
 
 export class Debug {
@@ -39,6 +39,8 @@ export class Debug {
       if (k === 'h') g.health = 1;
       if (k === 'd') g.health = Math.max(0.01, g.health - 0.2);
       if (k === 'p') g.pills++;
+      if (k === 'w' && g.canWeather()) g.windGust();
+      if (k === 't' && g.canWeather()) g.thunder(e.shiftKey);
     });
     this.refresh();
   }
@@ -87,11 +89,11 @@ export class Debug {
         ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
       `lever room ${w.rooms.findIndex((r) => r.kind === 'levers')} (-1 = none)  clue in room ${w.rooms.findIndex((r) => r.items.some((it) => it.clue))}  levers now ${(g.leverPos.get(g.roomIndex) ?? []).map((v) => (v ? 'v' : '^')).join('') || '-'}`,
       `dark rooms ${w.rooms.flatMap((r, i) => (r.dark ? [i + (r.dark.screamer ? '!' : '')] : [])).join(', ') || '-'}  (! = screamer)`,
-      `ambience ${w.ambience}`,
+      `ambience ${w.ambience}  weather ${w.weather}  windows in rooms ${w.rooms.flatMap((r, i) => (r.windows ? [i + (r.windows.length > 1 ? 'x2' : '') + (g.shut.has(i) ? ' (shut)' : '')] : [])).join(', ') || '-'}`,
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
       '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot  [F] false alarm  [Q] silence',
-      '[G] ghost  [H] heal  [D] -20% health  [P] +1 pill',
+      '[G] ghost  [H] heal  [D] -20% health  [P] +1 pill  [W] gust  [T] thunder  [Shift+T] thunder + face',
     );
     this.el.textContent = lines.join('\n');
   }
