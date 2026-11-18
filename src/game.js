@@ -459,10 +459,7 @@ export class Game {
       if (this.inDark() && !this.msg) this.say(pickText(TEXT.dark));
       return;
     }
-    if (h === 'back') {
-      this.onSfx?.('door');
-      return void this.go(this.room.spec.parent);
-    }
+    if (h === 'back') return void this.back();
     if (h === 'pill') return void this.usePill();
     if (h.lightSwitch) return void this.turnOnLight();
     if (h.painting) return void this.takeLoot(h);
@@ -489,6 +486,14 @@ export class Game {
     if (!h.pose) return void this.movePainting(h);
     if (h.anim) return;
     this.say(pickText(lootId(e) && !this.taken.has(h.uid) ? TEXT.lootLeft : TEXT.searched));
+  }
+
+  // Go back to the parent room (back arrow or the Space key). Same guards as a tap; false if not possible.
+  back() {
+    if (this.phase !== 'idle' || this.jump || !this.room || this.room.spec.parent < 0) return false;
+    this.onSfx?.('door');
+    this.go(this.room.spec.parent);
+    return true;
   }
 
   // Take a pill: heals a fixed share of FULL health, capped at full. Always consumed, even at full health

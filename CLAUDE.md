@@ -44,7 +44,7 @@ src/main.js         boot, on-demand rAF loop (wake()), resize, input wiring, wor
 src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf caps)
 src/renderer.js     WebGL1: 2 programs (bg, item), 1 unit quad VBO, texture cache (WeakMap by source), letterbox view, context-loss restore
 src/shaders.js      GLSL. lightAt() = flashlight mask, evaluated per fragment in every draw (no fullscreen pass)
-src/game.js         state: room, inventory (keys/unlocked/searched/lit), light + ceiling light, per-item hover/glow, transitions ('in'|'idle'|'out'|'end'), door/painting/back taps, hudState(), frame() -> draw list
+src/game.js         state: room, inventory (keys/unlocked/searched/lit), light + ceiling light, per-item hover/glow, transitions ('in'|'idle'|'out'|'end'), door/painting/back taps (back() is also bound to Space in main.js), hudState(), frame() -> draw list
 src/heartbeat.js    health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat; beatEnvelope(now) -> 0..1 for the HUD heart
 src/sfx.js          sound roles: CONFIG.sfx prefix -> random pool from assets/audio/index.json, preload modes, playRole()
 src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font, typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change

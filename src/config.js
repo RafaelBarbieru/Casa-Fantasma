@@ -150,7 +150,7 @@ export const CONFIG = {
     randomPerMin: [0, 0, 1, 1.5, 2, 2.5],       // random ghost appearances per minute spent in a room (not the
                                                  // first room of a level, not ghost rooms). 0 = never.
     graceS: 2,          // no random ghost in the first seconds after entering a room
-    lingerS: [1, 10],   // after you escape a random ghost, it stays in that room this long (random in range)
+    lingerS: [1, 2],   // after you escape a random ghost, it stays in that room this long (random in range)
     drainPerS: 0.12,    // health lost per second in a room with a ghost (0.12 = dead in ~8 s)
     regenPerS: 0,       // health regained per second away from ghosts (0 = never heals)
     lampOffS: 0.3,      // the flashlight flickers this long, then dies

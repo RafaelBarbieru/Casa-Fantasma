@@ -103,7 +103,14 @@ async function boot() {
   visualViewport?.addEventListener('resize', onResize);
   new ResizeObserver(onResize).observe(canvas);
   renderer.onRestore = wake;
-  addEventListener('keydown', wake);
+  addEventListener('keydown', (e) => {
+    // Space = back arrow (keyboard players). Only once the start overlay is gone; ignore auto-repeat.
+    if (e.code === 'Space') {
+      e.preventDefault(); // no page scroll / button activation
+      if (!e.repeat && overlay.classList.contains('hidden')) game.back();
+    }
+    wake();
+  });
   onResize();
 
   attachInput(canvas, (x, y) => renderer.cssToScene(x, y), {
