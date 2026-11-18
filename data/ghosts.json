@@ -5,6 +5,8 @@
     "ghost03": { "src": "assets/ghost03.webp", "scale": 3 }
   },
   "screamers": {
-    "screamer01": { "src": "assets/screamer01.webp" }
+    "screamer01": { "src": "assets/screamer01.webp" },
+    "screamer02": { "src": "assets/screamer02.webp" },
+    "screamer03": { "src": "assets/screamer03.webp" }
   }
 }

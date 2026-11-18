@@ -5,6 +5,9 @@
 //   rooms: [{                         rooms[0] is the start. The rooms form a tree: every room but the
 //     kind: 'doors' | 'paintings' | 'ghost',  start has exactly one way in (its parent), which is where "back" goes.
 //     ghost?: { id, x, y },           ghost rooms only: black room, always this ghost (data/ghosts.json id)
+//     dark?: { switchAt, screamer? }, dark room: no flashlight, nothing usable until its light switch is on.
+//                                     switchAt 0..1 picks the switch's spot among the free ones on the wall.
+//                                     screamer: the room is empty (items: []) and a screamer jumps out at the light
 //     parent: index | -1,
 //     stage: n,                       0 = reachable without keys, n = behind locked side door n (debug/editor info)
 //     template: roomId,               data/rooms.json layout (slots)
@@ -25,6 +28,7 @@
 //      Their keys are hidden in the open region. The master key is either in the open region or (masterBehindChance)
 //      behind one of the side doors; the other side regions are red herrings.
 //   4. Every door left over leads to a decoy painting room or, from level 2 (ghost.roomChance), a ghost room.
+//   5. Some rooms are dark (darkRooms.roomChance); a dark room with nothing to find may be a screamer room.
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -33,7 +37,7 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
-export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, level = 1 } = {}) {
+export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, level = 1 } = {}) {
   const rng = createRng(seed);
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
@@ -206,6 +210,21 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
   const nPills = Math.floor(expected) + (prng.next() < expected % 1 ? 1 : 0);
   const spots = out.flatMap((r) => (r.kind === 'paintings' ? r.items.filter((it) => it.key === undefined) : []));
   for (const it of prng.shuffle(spots).slice(0, nPills)) it.pill = true;
+
+  // Dark rooms: their own random stream as well (3 draws per room, always), so they never shift layouts or pills.
+  // Any room but the first and ghost rooms. A dark painting room with no key or pill behind any painting may become
+  // a screamer room: emptied, only the light switch left.
+  const drng = createRng((seed ^ 0xda4c0de) >>> 0);
+  const darkChance = perLevel(dark.roomChance), scareChance = perLevel(dark.screamerChance);
+  out.forEach((r, i) => {
+    const isDark = drng.next() < darkChance, switchAt = drng.next(), scare = drng.next() < scareChance;
+    if (i === 0 || r.kind === 'ghost' || !isDark) return;
+    r.dark = { switchAt };
+    if (scare && r.kind === 'paintings' && r.items.every((it) => it.key === undefined && !it.pill)) {
+      r.dark.screamer = true;
+      r.items = [];
+    }
+  });
 
   // Picked last so adding/removing loops never changes a seed's layout.
   const loops = ambience.length > 1 ? ambience.filter((a) => a !== avoidAmbience) : ambience;

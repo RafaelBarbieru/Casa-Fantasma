@@ -56,7 +56,15 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
 - **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
   - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
-- At 0% a screamer flashes on screen with a scream, and the game starts over from level 1.
+- At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), and the game starts over from level 1.
+
+### Dark rooms
+- Any room except the first one of a level can be **dark**, from level 1 on. Walking in feels exactly like a ghost room: the flashlight flickers and dies. You can't tell which it is until a ghost does (or doesn't) appear.
+- A dark room has a **light switch** (`art-src/light_switch.png`) somewhere on the wall, always in the same place, next to the doors and paintings but never touching them. It is invisible in the dark: you have to search the walls until you point at it and it glows. On a phone, drag your finger along the walls. Until you switch it on, nothing else in the room glows or can be clicked; clicking in the dark just tells you it's too dark.
+- Switching it on lights the room from a **ceiling light**: a wide, soft pool of light from above, dimmer at the edges and near the floor. The flashlight stays off in that room. The light stays on if you leave and come back.
+- Dark rooms can have doors, keys and pills like any other room, so running away from every dark room can cost you the way out.
+- A ghost in a lit room puts the ceiling light out too.
+- **Screamer rooms.** A dark room with nothing to find (paintings with no key or pills behind them) is sometimes a screamer room instead: it is empty except for the switch, and a moment after the light comes on, a screamer (one of `art-src/screamerNN.png`) jumps out with a short scream (`sfx/screamer_short`). It doesn't hurt you. This gets more likely every level.
 
 `src/config.js`:
 - `ghost`:
@@ -66,7 +74,8 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - `lingerS`: how long an escaped ghost stays.
   - `drainPerS`: how fast health drains with a ghost in the room.
   - `regenPerS`: health regained per second away from ghosts (0 = never).
-  - `lampOffS`, `fadeDelayS`, `fadeInS`: timings for the flashlight dying and the ghost fading in.
+  - `lampOffS`: how long the flashlight flickers before it dies.
+  - `fadeDelayS`, `fadeInS`: `[min, max]` seconds. Each time a ghost appears, it waits a random time in the first range before fading in, and fades in over a random time in the second. Together they keep you guessing whether a dark room holds a ghost.
   - `gain`: how bright the ghosts are.
   - `drift`: how much they float.
 - `pills`:
@@ -84,7 +93,17 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - The key pictures are `art-src/key.png` and `art-src/master_key.png` (pills use `health.png`); their size on the wall is `scale` in `data/items.json`.
 - `heartbeat`: when it starts, when it switches to fast, and the gaps between beats. `thumps` says when the heart picture jumps within each heartbeat sound; update it if you replace those sounds.
 - `healthHud`: the heart's position and size, how much it jumps per beat, how dark the lost part is, and how strong the red edge glow gets.
-- `screamer`: how long it lasts and how fast it flashes.
+- `screamer`: how long it lasts and how fast it flashes (also how fast the screamer-room screamers flash).
+- `darkRooms`:
+  - `roomChance`: per level, how likely a room is dark (0.2 = 20%). The last value repeats.
+  - `screamerChance`: per level, how likely a dark room with nothing to find is a screamer room.
+  - `switchY`: the heights tried for the switch, in scene pixels (1080 = bottom of the screen); the first one with free wall space is used.
+  - `switchMargin`: the minimum gap between the switch and doors or paintings.
+  - `onS`: how long the ceiling light flickers before it's fully on.
+  - `light`: the ceiling light. `x`, `y` = where it's brightest; `reach` = how far it spreads; `ambient` = brightness far from it; `peak` = brightness under it; `stretch` above 1 makes it fade faster towards the floor than to the sides.
+  - `screamerDelayS`, `screamerS`: how long after the light comes on the screamer appears, and how long it stays.
+  - The switch's size is `scale` of `light_switch` in `data/items.json`.
+  - Changing these never changes the rest of a seed's layout.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
 
 ### The maze settings
@@ -134,7 +153,7 @@ To add a texture:
 - `wallMargin`: the minimum gap between a painting and the floor.
 
 ### Ghosts and screamers
-- Ghost images go in `art-src/` as `ghostNN.png` (any background; black is fine, the game makes it invisible). Screamers go in as `screamerNN.png/jpg`.
+- Ghost images go in `art-src/` as `ghostNN.png` (any background; black is fine, the game makes it invisible). Screamers go in as `screamerNN.png/jpg` (full screen, 16:9 like 1920x1080; they are used both when you die and in screamer rooms).
 - Register them in `data/ghosts.json`:
 
 ```json
@@ -205,10 +224,11 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/level_end` | you open the master door |
   | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
   | `sfx/ghost_spotted` | a ghost fades in |
-  | `sfx/flashlight` | the flashlight dies when a ghost appears
+  | `sfx/flashlight` | the flashlight dies (a ghost appears, or you walk into a dark room); also a lit room's light going out, and switching on a dark room's light |
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
   | `sfx/heartbeat_fast` | heartbeat, health below 50% |
-  | `sfx/screamer` | health reached 0 |
+  | `sfx/screamer_long` | health reached 0 |
+  | `sfx/screamer_short` | a screamer room's screamer jumps out |
   | `sfx/healed` | you take a pill |
 
   Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.

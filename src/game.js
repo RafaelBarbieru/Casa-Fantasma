@@ -1,4 +1,5 @@
-// Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, HUD state.
+// Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, dark rooms
+// (light switch, ceiling light, screamer rooms), HUD state.
 // Produces a frame description for Renderer.
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
@@ -37,6 +38,7 @@ const TEXT = {
   masterTaken: ['You take the key. It is heavy, and gold.'],
   pillTaken: ['You take the pills.'],
   healed: ['You swallow a pill. You feel better.'],
+  dark: ["It's too dark to see anything.", 'There must be a light switch somewhere.', 'You feel along the wall.'],
   level: (n) => `Level ${n}`,
 };
 
@@ -47,6 +49,23 @@ function flickerIn(t) {
   if (t >= 1) return 1;
   const on = t > 0.75 || Math.sin(t * 61) + Math.sin(t * 157) < 0.7;
   return (on ? 1 : 0.15) * Math.min(1, t * 1.6);
+}
+
+// A light dying: flickers for ghost.lampOffS seconds after t = 0, then off. Used for the flashlight and, when a ghost
+// comes, the ceiling light of a lit dark room.
+function dying(t) {
+  if (t >= CONFIG.ghost.lampOffS) return 0;
+  return Math.sin(t * 97) + Math.sin(t * 41) > 0 ? 1 : 0.12;
+}
+
+// A screamer image filling the screen: flashing, jittering and pulsing in size. t = seconds since it appeared.
+function screamerOverlay(img, t, holdS) {
+  const sc = CONFIG.screamer, W = CONFIG.sceneW, H = CONFIG.sceneH;
+  if (!img || !((t * sc.flashHz) % 1 < 0.7 || t > holdS * 0.6)) return null;
+  const h = H * (1.05 + 0.12 * Math.abs(Math.sin(t * 23)));
+  const w = (h * (img.naturalWidth || 1)) / (img.naturalHeight || 1);
+  const jx = Math.sin(t * 71) * 25, jy = Math.cos(t * 53) * 18;
+  return { img, rect: [(W - w) / 2 + jx, (H - h) / 2 + jy, w, h] };
 }
 
 export class Game {
@@ -74,7 +93,11 @@ export class Game {
     this.health = 1;
     this.pills = 0;       // pills held. Like health, they carry over between levels (main resets both on death)
     this.ghost = null;    // ghost in the current room: { id, sprite, s, x, y, random, t, alpha, cued }
-    this.lamp = 1;        // flashlight: 1 on, 0 off (a ghost kills it). Multiplies exposure.
+    this.lamp = 1;        // flashlight: 1 on, 0 off (a ghost or a dark room kills it). Multiplies exposure.
+    this.lampT = null;    // seconds since the flashlight started dying in this room, or null while it works
+    this.ceiling = 0;     // ceiling light of a lit dark room: 0 off .. 1 on
+    this.switchT = null;  // seconds since this room's light switch was turned on (Infinity: it already was), or null
+    this.jump = null;     // screamer-room jumpscare: { img, t } (t < 0 while it waits for the light), or null
     this.spawnAt = null;  // performance.now() ms when a random ghost appears in this room, or null
     this.screamer = null; // image shown while dead
   }
@@ -90,6 +113,7 @@ export class Game {
     this.poses = new Map(); // uid -> { kind: 'tilt' | 'fall', side, px, py, dx, dy, ang, crack? }
     this.visited = new Set();
     this.lingering = new Map(); // room -> { id, x, y, goneAt }: random ghosts you escaped, still there for a while
+    this.lit = new Set();       // dark rooms whose light switch is on
     this.ghost = null;
     this.msg = null;
     this.enterRoom(0);
@@ -138,15 +162,22 @@ export class Game {
       floor: this.assets.surfaces.get(spec.floor), floorTile: sf.floors[spec.floor]?.tile ?? 512,
     };
     this.room = { spec, template, bg: spec.kind === 'ghost' ? null : bg, items, loot };
+    this.room.sw = spec.dark ? this.makeSwitch(spec, items) : null;
     this.markExplored();
     this.hover = null;
     this.phase = 'in';
     this.phaseT = 0;
     this.exposure = 0;
 
-    // Ghost rooms always hold their ghost; other rooms may still hold a random ghost you escaped from.
+    // Dark rooms kill the flashlight on the way in (same cue as a ghost room), unless their light is already on.
     this.ghost = null;
+    this.jump = null;
     this.lamp = 1;
+    this.lampT = null;
+    this.switchT = spec.dark && this.lit.has(i) ? Infinity : null;
+    this.ceiling = this.switchT === null ? 0 : 1;
+    if (spec.dark) this.killLamp(this.switchT === null);
+    // Ghost rooms always hold their ghost; other rooms may still hold a random ghost you escaped from.
     const linger = this.lingering.get(i);
     if (linger && linger.goneAt <= now()) this.lingering.delete(i);
     if (spec.kind === 'ghost') this.summon(spec.ghost, false);
@@ -159,14 +190,76 @@ export class Game {
     this.onRoomChange?.(this);
   }
 
-  // A ghost appears in the current room: the flashlight dies, then the ghost fades in (see update()).
+  // The flashlight flickers and dies (see dying()). sfx: play the flashlight sound; otherwise it is simply off.
+  killLamp(sfx) {
+    if (this.lampT !== null) return;
+    this.lampT = sfx ? 0 : Infinity;
+    this.lamp = sfx ? 1 : 0;
+    if (sfx) this.onSfx?.('flashlight');
+  }
+
+  // A ghost appears in the current room: the flashlight (and a ceiling light) dies, then the ghost fades in (see update()).
   summon({ id, x, y }, random) {
     const def = this.db.ghosts.ghosts[id];
-    this.ghost = { id, x, y, random, sprite: this.assets.sprites.get(id), s: def?.scale ?? 3, t: 0, alpha: 0, cued: false };
+    const gc = CONFIG.ghost;
+    this.ghost = {
+      id, x, y, random, sprite: this.assets.sprites.get(id), s: def?.scale ?? 3, t: 0, alpha: 0, cued: false,
+      delay: between(gc.fadeDelayS), fadeIn: between(gc.fadeInS), // rolled per appearance (see CONFIG.ghost)
+    };
     this.spawnAt = null;
     if (this.hover !== 'back') this.hover = null;
-    this.onSfx?.('flashlight');
+    if (this.lampT === null) this.killLamp(true);
+    else if (this.ceiling > 0) this.onSfx?.('flashlight'); // the ceiling light goes out instead
     this.onRoomChange?.(this);
+  }
+
+  // Light switch of a dark room: somewhere on the wall, clear of the room's doors and paintings. spec.dark.switchAt
+  // (seeded) picks one of the free spots, so the switch is always in the same place. Same shape as a room item.
+  makeSwitch(spec, items) {
+    const sprite = this.assets.sprites.get('light_switch');
+    if (!sprite) return null;
+    const D = CONFIG.darkRooms, def = this.db.items.light_switch ?? {}, s = def.scale ?? 1;
+    const w = sprite.w * s, h = sprite.h * s, m = D.switchMargin, edge = 120;
+    const boxes = items.map((it) => [it.x0, it.y0, it.x0 + it.sprite.w * it.s, it.y0 + it.sprite.h * it.s]);
+    const free = (x, y) => boxes.every(([x0, y0, x1, y1]) =>
+      x + w / 2 + m <= x0 || x - w / 2 - m >= x1 || y + h / 2 + m <= y0 || y - h / 2 - m >= y1);
+    let spots = [];
+    for (const y of D.switchY) {
+      for (let x = edge; x <= CONFIG.sceneW - edge; x += 10) if (free(x, y)) spots.push([x, y]);
+      if (spots.length) break;
+    }
+    const u = spec.dark.switchAt;
+    const [cx, cy] = spots.length ? spots[Math.min(spots.length - 1, Math.floor(u * spots.length))]
+      : [edge + u * (CONFIG.sceneW - 2 * edge), D.switchY[0]];
+    const x0 = cx - w / 2, y0 = cy - h / 2;
+    return {
+      lightSwitch: true, id: 'light_switch', sprite, s, cx, cy, x0, y0, depth: def.depth ?? 1, glow: 0, shake: 0, clip: 2,
+      rect: [x0 - sprite.ox * s, y0 - sprite.oy * s, sprite.tw * s, sprite.th * s],
+    };
+  }
+
+  // True while the current room is dark and its light is still off: only the switch (and the HUD) can be used.
+  inDark() {
+    return !!this.room?.spec.dark && !this.lit.has(this.roomIndex);
+  }
+
+  // The light switch is tapped: the ceiling light flickers on (the flashlight stays dead). In a screamer room a
+  // screamer jumps out right after.
+  turnOnLight() {
+    this.lit.add(this.roomIndex);
+    this.switchT = 0;
+    this.hover = null;
+    this.onSfx?.('lightSwitch');
+    if (this.room.spec.dark.screamer) this.jump = { img: this.pickScreamer(), t: -CONFIG.darkRooms.screamerDelayS };
+    this.markExplored();
+    // Things under a resting pointer can glow now.
+    if (this.lastPointer) this.pointerMove(this.lastPointer.p, this.lastPointer.kind);
+    this.onRoomChange?.(this);
+  }
+
+  pickScreamer() {
+    const imgs = [...this.assets.screamers.values()];
+    return imgs[(Math.random() * imgs.length) | 0] ?? null;
   }
 
   // Random ghost now (also the debug G key). Not in the first room of a level.
@@ -184,8 +277,8 @@ export class Game {
     this.spawnAt = null;
     this.msg = null;
     this.hover = null;
-    const imgs = [...this.assets.screamers.values()];
-    this.screamer = imgs[(Math.random() * imgs.length) | 0] ?? null;
+    this.jump = null;
+    this.screamer = this.pickScreamer();
     this.onSfx?.('screamer');
   }
 
@@ -307,6 +400,7 @@ export class Game {
   // something left. The rooms form a tree, so this terminates; levels are small, so no caching is needed.
   isExplored(r) {
     if (this.world.rooms[r].kind === 'ghost') return this.visited.has(r); // nothing to find, once you know
+    if (this.world.rooms[r].dark && !this.lit.has(r)) return false;
     return this.world.rooms[r].items.every((e, idx) => {
       const uid = `${r}:${idx}`;
       if (e.to === undefined) return this.searched.has(uid) && (!lootId(e) || this.taken.has(uid));
@@ -341,7 +435,7 @@ export class Game {
     this.light.tx = p.x;
     this.light.ty = p.y;
     this.lastPointer = { p, kind };
-    const h = this.phase === 'idle' ? this.hit(p, kind) : null;
+    const h = this.phase === 'idle' && !this.jump ? this.hit(p, kind) : null;
     // With a ghost in the room nothing glows: you have to remember where the doors were.
     this.hover = this.ghost && h !== 'back' && h !== 'pill' ? null : h;
   }
@@ -359,14 +453,18 @@ export class Game {
     this.pointerMove(p, kind);
     if (this.phase === 'end') return void this.onWorldEnd?.(this);
     if (this.phase === 'dead') return;
-    if (this.phase !== 'idle') return;
+    if (this.phase !== 'idle' || this.jump) return;
     const h = this.hit(p, kind);
-    if (!h) return;
+    if (!h) {
+      if (this.inDark() && !this.msg) this.say(pickText(TEXT.dark));
+      return;
+    }
     if (h === 'back') {
       this.onSfx?.('door');
       return void this.go(this.room.spec.parent);
     }
     if (h === 'pill') return void this.usePill();
+    if (h.lightSwitch) return void this.turnOnLight();
     if (h.painting) return void this.takeLoot(h);
     const e = h.e;
     if (e.to !== undefined) {
@@ -422,13 +520,16 @@ export class Game {
   }
 
   // Returns the item under p (topmost = last drawn), uncovered loot (has .painting; checked before the paintings, as
-  // it is small and a slipped painting may still touch it), 'back', 'pill' (the HUD pill icon), or null.
+  // it is small and a slipped painting may still touch it), the light switch of an unlit dark room (.lightSwitch),
+  // 'back', 'pill' (the HUD pill icon), or null.
   hit(p, kind) {
     if (!this.room) return null;
     const pl = CONFIG.hud.pills;
     if (this.pills > 0 && Math.abs(p.x - pl.x) <= pl.w / 2 && Math.abs(p.y - pl.y) <= pl.h / 2) return 'pill';
     const b = CONFIG.hud.back;
     if (this.room.spec.parent >= 0 && Math.abs(p.x - b.x) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2) return 'back';
+    // In the dark only the light switch can be found; once it is on, the switch is just part of the wall.
+    if (this.inDark()) return this.room.sw && this._hitItem(this.room.sw, p, kind) ? this.room.sw : null;
     for (const l of this.room.loot) if (!l.painting.anim && this._hitItem(l, p, kind)) return l;
     const items = this.room.items;
     for (let i = items.length - 1; i >= 0; i--) if (this._hitItem(items[i], p, kind)) return items[i];
@@ -478,15 +579,38 @@ export class Game {
       return true;
     }
 
-    // Ghosts: random appearance, flashlight dying, fade-in, health drain.
-    const gc = CONFIG.ghost;
+    // Flashlight dying (ghost or dark room), ceiling light coming on (dark room) and going out (ghost).
+    const gc = CONFIG.ghost, D = CONFIG.darkRooms;
+    if (this.lampT !== null && this.lampT < gc.lampOffS) {
+      this.lampT += dt;
+      this.lamp = dying(this.lampT);
+      busy = true;
+    }
+    if (this.switchT !== null) {
+      if (this.switchT < D.onS) {
+        this.switchT += dt;
+        busy = true;
+      }
+      this.ceiling = flickerIn(this.switchT / D.onS) * (this.ghost ? dying(this.ghost.t) : 1);
+    }
+    if (this.jump) {
+      const J = this.jump, was = J.t;
+      J.t += dt;
+      if (was < 0 && J.t >= 0) this.onSfx?.('screamerShort');
+      if (J.t >= D.screamerS) {
+        this.jump = null;
+        if (this.lastPointer) this.pointerMove(this.lastPointer.p, this.lastPointer.kind);
+      }
+      busy = true;
+    }
+
+    // Ghosts: random appearance, fade-in, health drain.
     if (!this.ghost && this.spawnAt !== null && this.phase === 'idle' && now() >= this.spawnAt) this.spawnRandomGhost();
     if (this.ghost && this.phase !== 'end') {
       const G = this.ghost;
       G.t += dt;
-      this.lamp = G.t < gc.lampOffS ? (Math.sin(G.t * 97) + Math.sin(G.t * 41) > 0 ? 1 : 0.12) : 0;
-      G.alpha = Math.min(1, Math.max(0, (G.t - gc.fadeDelayS) / gc.fadeInS));
-      if (!G.cued && G.t >= gc.fadeDelayS) {
+      G.alpha = Math.min(1, Math.max(0, (G.t - G.delay) / G.fadeIn));
+      if (!G.cued && G.t >= G.delay) {
         G.cued = true;
         this.onSfx?.('ghostSpotted');
       }
@@ -519,7 +643,9 @@ export class Game {
     }
 
     const g = CONFIG.glow;
-    for (const it of [...this.room.items, ...this.room.loot]) {
+    const glowing = [...this.room.items, ...this.room.loot];
+    if (this.room.sw) glowing.push(this.room.sw);
+    for (const it of glowing) {
       const target = this.hover === it ? 1 : 0;
       it.glow = approach(it.glow, target, g.rate, dt);
       if (Math.abs(it.glow - target) < 0.002) it.glow = target;
@@ -559,21 +685,16 @@ export class Game {
   frame() {
     const L = this.light, f = CONFIG.flashlight, sh = CONFIG.shadow, g = CONFIG.glow;
     if (this.phase === 'dead') {
-      // Screamer: flashing on/off, jittering and pulsing in size.
-      const t = this.phaseT, sc = CONFIG.screamer;
-      const on = (t * sc.flashHz) % 1 < 0.7 || t > sc.holdS * 0.6;
-      const size = CONFIG.sceneH * (1.05 + 0.12 * Math.abs(Math.sin(t * 23)));
-      const jx = Math.sin(t * 71) * 25, jy = Math.cos(t * 53) * 18;
       return {
         light: { x: L.x, y: L.y, r: f.radius, exposure: 0 },
         bg: null,
         items: [],
-        overlay: this.screamer && on
-          ? { img: this.screamer, rect: [(CONFIG.sceneW - size) / 2 + jx, (CONFIG.sceneH - size) / 2 + jy, size, size] }
-          : null,
+        overlay: screamerOverlay(this.screamer, this.phaseT, CONFIG.screamer.holdS),
       };
     }
-    const srcX = L.x + f.handOffset[0], srcY = L.y + f.handOffset[1];
+    // Shadows fall away from whichever light is stronger: the flashlight (held low right) or the ceiling light.
+    const D = CONFIG.darkRooms, ceil = this.exposure * this.ceiling, flash = this.exposure * this.lamp;
+    const [srcX, srcY] = ceil > flash ? [D.light.x, D.light.y] : [L.x + f.handOffset[0], L.y + f.handOffset[1]];
     const P = CONFIG.paintings;
     const draw = (it) => {
       const pose = this.poseOf(it);
@@ -611,6 +732,8 @@ export class Game {
     };
     const items = [];
     if (this.phase !== 'end') {
+      // The switch is lit like everything else, so in the dark only its hover glow gives it away.
+      if (this.room.sw) items.push(draw(this.room.sw));
       // Loot hangs on the wall behind its painting, so it is drawn first.
       for (const l of this.room.loot) items.push(draw(l));
       for (const it of this.room.items) items.push(draw(it));
@@ -627,10 +750,12 @@ export class Game {
         fx: [1, G.alpha * (0.85 + 0.15 * Math.sin(this.time * 9)), CONFIG.ghost.gain, 1],
       });
     }
+    const lt = D.light;
     return {
-      light: { x: L.x, y: L.y, r: f.radius, exposure: this.exposure * this.lamp },
+      light: { x: L.x, y: L.y, r: f.radius, exposure: flash, room: [lt.x, lt.y, lt.reach, ceil] },
       bg: this.phase === 'end' ? null : this.room.bg,
       items,
+      overlay: this.jump && this.jump.t >= 0 ? screamerOverlay(this.jump.img, this.jump.t, D.screamerS) : null,
     };
   }
 }

@@ -7,6 +7,7 @@ import { VS, FS_BG, FS_ITEM, FS_HUD, FS_POST } from './shaders.js';
 const NO_FX = [0, 1, 1, 0];
 const NO_ROT = [0, 0, 0];
 const NO_CRACK = [0, 0, 0, 0];
+const NO_ROOM_LIGHT = [0, 0, 1, 0];
 
 export class Renderer {
   static create(canvas) {
@@ -173,12 +174,15 @@ export class Renderer {
     gl.uniform2f(u.uScene, CONFIG.sceneW, CONFIG.sceneH);
     gl.uniform4f(u.uLight, light.x, light.y, light.r, light.exposure);
     gl.uniform4f(u.uLightP, f.ambient, f.softness, f.hotspot, f.gain);
+    const rl = CONFIG.darkRooms.light;
+    gl.uniform4fv(u.uRoomLight, light.room ?? NO_ROOM_LIGHT);
+    gl.uniform3f(u.uRoomLightP, rl.ambient, rl.peak, rl.stretch);
     gl.uniform3f(u.uTint, f.tint[0], f.tint[1], f.tint[2]);
     gl.uniform1f(u.uNoise, CONFIG.ps1.enabled ? 0 : 1);
     gl.uniform1i(u.uTex, 0);
   }
 
-  // frame = { light:{x,y,r,exposure}, bg: { wall, floor, wallTile, floorTile } | null,
+  // frame = { light:{x,y,r,exposure, room?:[x,y,reach,amount]}, overlay?:{img,rect}, bg: { wall, floor, wallTile, floorTile } | null,
 //           items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten], clip,
 //                     fx?, rot?:[radians, pivotX, pivotY], crack?:[u, v, amount, seed] }] }
   // hud = Hud (canvas + version) or null
@@ -244,7 +248,7 @@ export class Renderer {
       }
     }
 
-    // Full-scene overlay image (the screamer): plain textured quad, unlit.
+    // Full-scene overlay image (the screamers): plain textured quad, unlit.
     if (frame.overlay) {
       gl.disable(gl.BLEND);
       gl.useProgram(this.pHud.p);

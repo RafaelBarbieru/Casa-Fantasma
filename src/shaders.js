@@ -1,6 +1,6 @@
 // GLSL ES 1.00 (WebGL1) — runs on every WebGL-capable phone/tablet/desktop.
-// The flashlight "mask" is evaluated per-fragment in every draw (lightAt) instead of a separate
-// fullscreen darkening pass: same look, zero extra overdraw.
+// The light "mask" (flashlight + the ceiling light of a lit dark room) is evaluated per-fragment in every draw
+// (lightAt) instead of a separate fullscreen darkening pass: same look, zero extra overdraw.
 
 export const VS = `
 attribute vec2 aPos;
@@ -30,13 +30,19 @@ varying vec2 vP;
 uniform sampler2D uTex;
 uniform vec4 uLight;   // beam x, y (scene px), radius, exposure
 uniform vec4 uLightP;  // ambient, softness, hotspot, gain
+uniform vec4 uRoomLight;  // ceiling light x, y (scene px), reach px, amount (0 = off)
+uniform vec3 uRoomLightP; // ambient, peak, vertical stretch
 uniform vec3 uTint;
 uniform float uNoise;  // 1 = add the fine noise dither, 0 = off (the PS1 post pass dithers instead)
 float lightAt(vec2 p) {
   float d = length(p - uLight.xy) / uLight.z;
   float spot = 1.0 - smoothstep(1.0 - uLightP.y, 1.0, d);
   float hot = 1.0 - smoothstep(0.0, 0.5, d);
-  return (uLightP.x + spot * (uLightP.w + uLightP.z * hot)) * uLight.w;
+  float flash = (uLightP.x + spot * (uLightP.w + uLightP.z * hot)) * uLight.w;
+  // Ceiling light: a wide, soft pool from above. Never reaches full brightness at the edges.
+  float r = length((p - uRoomLight.xy) * vec2(1.0, uRoomLightP.z)) / uRoomLight.z;
+  float room = (uRoomLightP.x + uRoomLightP.y * (1.0 - smoothstep(0.0, 1.0, r))) * uRoomLight.w;
+  return flash + room;
 }
 // Interleaved gradient noise: kills banding in the dark gradients (full-res mode only).
 float dither() {

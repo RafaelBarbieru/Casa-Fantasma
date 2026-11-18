@@ -61,7 +61,8 @@ export class Debug {
     const g = this.game, v = this.r.view, s = g.room?.spec, w = g.world;
     const lines = [
       `level ${w.level}  seed ${w.seed}`,
-      `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}`,
+      `room ${g.roomIndex}/${w.rooms.length - 1}  ${s?.kind}  stage ${s?.stage}  back -> ${s?.parent}` +
+        (s?.dark ? `  DARK${s.dark.screamer ? ' (screamer)' : ''} ${g.lit.has(g.roomIndex) ? 'lit' : 'unlit'}` : ''),
       `layout ${s?.template}  ${s?.wall} + ${s?.floor}`,
       `health ${(g.health * 100).toFixed(0)}%  ghost ${g.ghost ? g.ghost.id + (g.ghost.random ? ' (random)' : ' (room)') : '-'}` +
         `  next random ghost ${g.spawnAt === null ? '-' : ((g.spawnAt - performance.now()) / 1000).toFixed(0) + ' s'}`,
@@ -79,6 +80,7 @@ export class Debug {
     lines.push(
       `held [${g.keys.join(', ')}]  pills ${g.pills}  (level has ${w.rooms.reduce((n, r) => n + r.items.filter((it) => it.pill).length, 0)},` +
         ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
+      `dark rooms ${w.rooms.flatMap((r, i) => (r.dark ? [i + (r.dark.screamer ? '!' : '')] : [])).join(', ') || '-'}  (! = screamer)`,
       `ambience ${w.ambience}`,
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,

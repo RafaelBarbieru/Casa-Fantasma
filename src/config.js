@@ -133,11 +133,13 @@ export const CONFIG = {
     item: { files: 'sfx/item' },                // picking up a key or pills
     levelEnd: { files: 'sfx/level_end' },       // the master door opens
     levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins
-    flashlight: { files: 'sfx/flashlight' },     // the flashlight dies when a ghost appears
+    flashlight: { files: 'sfx/flashlight' },     // the flashlight dies (a ghost appears, or you enter a dark room)
     ghostSpotted: { files: 'sfx/ghost_spotted', preload: 'one' }, // the ghost fades in
     heartbeatSlow: { files: 'sfx/heartbeat_slow' },
     heartbeatFast: { files: 'sfx/heartbeat_fast' },
-    screamer: { files: 'sfx/screamer' },        // health reached 0
+    screamer: { files: 'sfx/screamer_long' },   // health reached 0
+    screamerShort: { files: 'sfx/screamer_short' }, // jumpscare when the light comes on in a screamer room
+    lightSwitch: { files: 'sfx/flashlight' },   // a dark room's light switch is turned on (same click as the flashlight)
     healed: { files: 'sfx/healed' },            // a pill is taken
   },
 
@@ -152,8 +154,9 @@ export const CONFIG = {
     drainPerS: 0.12,    // health lost per second in a room with a ghost (0.12 = dead in ~8 s)
     regenPerS: 0,       // health regained per second away from ghosts (0 = never heals)
     lampOffS: 0.3,      // the flashlight flickers this long, then dies
-    fadeDelayS: 0.4,    // then the ghost starts to fade in...
-    fadeInS: 1.5,       // ...over this long
+    // Random in range for every ghost, so a ghost room can't be told from a dark room by how fast the ghost comes:
+    fadeDelayS: [0.5, 1.5], // [min, max] seconds after the flashlight starts dying before the ghost starts to fade in...
+    fadeInS: [0.5, 2.0],    // ...[min, max] seconds the fade-in takes
     gain: 3.2,          // ghost brightness (the art is very dark; the PS1 color reduction eats faint detail)
     drift: 10,          // slow floating movement, scene px
   },
@@ -194,6 +197,25 @@ export const CONFIG = {
     drained: 0.3,       // brightness of the lost part (0 = black)
     vignette: 0.55,     // vignette opacity at zero health (0 = off)
     vignetteBeat: 0.35, // extra opacity at the peak of a thump (scaled by how low health is)
+  },
+
+  // Dark rooms (src/world.js + src/game.js). The flashlight dies when you walk in, exactly like in a ghost room, so you
+  // can't tell them apart at first. A light switch (data/items.json "light_switch") hangs somewhere on the wall,
+  // invisible in the dark: it  // glows when the pointer is over it, and nothing else in the room can be used until it is turned on. Then a ceiling
+  // light comes on (the flashlight stays off). Per-level lists: index 0 = level 1, the last value repeats.
+  darkRooms: {
+    roomChance: [0.2, 0.2, 0.25, 0.25, 0.3],      // chance any room except the first is dark (doors, keys and all)
+    screamerChance: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4], // chance a dark room with nothing to find (paintings, no key or
+                                                 // pill behind them) is a screamer room instead: empty but for the
+                                                 // switch, and a screamer jumps out when the light comes on
+    switchY: [560, 640, 720], // heights tried for the switch (scene px, centre), first one with room to spare wins
+    switchMargin: 30,   // min gap between the switch and the room's doors/paintings, scene px
+    onS: 0.7,           // the ceiling light flickers on over this long
+    // Ceiling light: brightest at (x, y) near the top of the screen, fading over `reach` scene px to `ambient`.
+    // stretch > 1 makes it fall off faster downward than sideways.
+    light: { x: 960, y: 40, reach: 1300, ambient: 0.16, peak: 1.0, stretch: 1.1 },
+    screamerDelayS: 0.35, // screamer rooms: the light is on this long before the screamer jumps out...
+    screamerS: 1.1,       // ...and it stays on screen this long (no damage)
   },
 
   // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the game restarts at level 1.

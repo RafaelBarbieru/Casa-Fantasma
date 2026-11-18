@@ -34,7 +34,7 @@ async function boot() {
   const hud = new Hud(assets.sprites);
   // avoidAmbience: the previous level's loop, so two levels in a row never share one.
   const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
-    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, level,
+    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   const startLevel = (seed, level) => {
