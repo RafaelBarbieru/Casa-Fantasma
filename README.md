@@ -54,6 +54,12 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
   A door with a locked door anywhere behind it that you haven't opened stays warm. So does the master door.
 - Levels are always solvable.
 
+### Scares
+- **False alarms.** From level 2, the flashlight sometimes flickers and dies exactly as when a ghost comes (same sound, nothing glows), stays dark for a second or two, then flickers back on, and nothing happens. Never in the first room of a level or in a ghost room. In a lit dark room it is the ceiling light that goes. Debug: **F**.
+- **Faces behind paintings.** From level 3, a painting with nothing behind it sometimes hides a face instead: a quick screamer with `sfx/screamer_short`, like a screamer room's. It doesn't hurt you.
+- **The long dark.** Sometimes, going through a door (not back), the screen stays black for a second or two longer before the next room shows. Half the time one of the random ambience sounds (`ambience/randomNN`) plays in it. You can also add sounds named `sfx/door_wait...` (a creak, a breath): one of them plays every time.
+- **Silences.** Now and then the background ambience fades out completely for 10 to 20 seconds (no random sounds either), then fades back in. Sometimes a ghost comes during the silence, but only where random ghosts can appear (from level 3). Debug: **Q**.
+
 ### Ghosts
 - **Level 1** has no ghosts.
 - **From level 2**, some dead-end doors lead to a **ghost room**: pitch black, with nothing but a ghost.
@@ -79,7 +85,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Switching it on lights the room from a **ceiling light**: a wide, soft pool of light from above, dimmer at the edges and near the floor. The flashlight stays off in that room. The light stays on if you leave and come back.
 - Dark rooms can have doors, keys and pills like any other room, so running away from every dark room can cost you the way out.
 - A ghost in a lit room puts the ceiling light out too.
-- **Screamer rooms.** A dark room with nothing to find (paintings with no key or pills behind them) is sometimes a screamer room instead: it is empty except for the switch, and a moment after the light comes on, a screamer (one of `art-src/screamerNN.png`) jumps out with a short scream (`sfx/screamer_short`). It doesn't hurt you. This gets more likely every level.
+- **Screamer rooms.** A dark room with nothing to find (paintings with no key or pills behind them) is sometimes a screamer room instead: it is empty except for the switch, and a moment after the light comes on, a screamer (one of `art-src/screamerNN.png`) jumps out with a short scream (`sfx/screamer_short`). It doesn't hurt you. There are none on levels 1 and 2; from level 3 they get more likely every level.
 
 ### Lever rooms
 - From level 3, a level sometimes has a **lever room**: one door and a row of 5 levers (`art-src/lever_base.png` for the plate, `art-src/lever_handle.png` for the handle that moves). All levers start **up**.
@@ -87,11 +93,13 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Wrong: `sfx/lever_fail` plays, the door jolts, and a moment later every lever snaps back up. Right: `sfx/lever_success` plays as you go through, and the levers stay where they are for the rest of the level.
 - The lever door never needs a key and is never the master door. Behind it there are a few more rooms: sometimes the **gold key** is there, otherwise nothing important.
 - A lever room can also be dark, like any other room.
-- The debug panel shows the combination (`^` = up, `v` = down) next to the lever door.
+- **The clue:** the combination is painted on the wall as a row of red arrows (left to right, up = lever up, down = lever down), hidden behind one painting or poster somewhere in the level, never behind the lever door itself. It may be behind a locked side door. It is never behind a painting that hides a key or pills, and that room is never a screamer room. The arrows are drawn by the game (no art file); they can't be clicked. Without the clue the door can still be found by trying combinations.
+- The debug panel shows the combination (`^` = up, `v` = down) next to the lever door, the clue next to its painting, and which room holds the clue.
 
 `src/config.js` → `levers`:
 - `roomChance`: per level, how likely the level has a lever room (0 on levels 1 and 2). The last value repeats.
 - `masterChance`: how likely the gold key is behind the lever door.
+- `clueChance`: how likely the combination is painted behind a painting or poster (1 = always, 0 = never). `clue.scale`: arrow size; `clue.fit`: the arrows shrink to at most this share of the painting's width and height; `clue.paint`: their colour (RGB).
 - `count`: how many levers (at most the lever spots in the `levers` layout of `data/rooms.json`).
 - `pullS`: how long a lever takes to move. `resetDelayS`, `resetS`: after a wrong try, how long the levers wait before snapping up, and how fast they snap.
 - `travel`: how far up and down the handle sits from the middle of the plate. `bulge`: how much bigger the handle looks halfway (as it turns towards you).
@@ -122,6 +130,13 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
   - `fallS`, `bounce`, `fallDeg`: how fast it falls, how much it bounces, how crooked it lands.
   - `fallSfxDelayS`: delay of the fall sound. 0 = when you click; set it to the same value as `fallS` to play it exactly when the painting hits the floor.
   - `crackPx`, `crackDarken`, `fallenGain`: crack thickness and darkness, and how much darker a fallen painting is.
+  - `screamerChance`: per level, how likely a painting with nothing behind it hides a face (0.05 = 5%; 0 on levels 1 and 2). `screamerDelayS`: how long after the click it jumps out.
+- `falseAlarm`:
+  - `perMin`: per level, how many false alarms per minute spent in a room (0 = never; level 1 has none).
+  - `graceS`: none in the first seconds after entering a room or after another false alarm.
+  - `darkS`: `[min, max]` seconds the light stays off. Keep it longer than a ghost takes to appear (`ghost.fadeDelayS`), so you can't tell too early.
+  - `backS`: how long the light takes to flicker back on.
+- `transition`: `waitChance` = per level, how likely a door gives the long dark; `waitS` = `[min, max]` seconds of it; `waitAmbience` = how likely a random ambience sound plays in it (0.5 = half the time). (`outS`, `inS`: the normal fade between rooms.)
   - The key pictures are `art-src/key.png` and `art-src/master_key.png` (pills use `health.png`); their size on the wall is `scale` in `data/items.json`.
 - `posters`: how posters tear.
   - `scratches`: how many clicks it takes to destroy a poster (random between the two, inclusive).
@@ -139,7 +154,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
   - `switchMargin`: the minimum gap between the switch and doors or paintings.
   - `onS`: how long the ceiling light flickers before it's fully on.
   - `light`: the ceiling light. `x`, `y` = where it's brightest; `reach` = how far it spreads; `ambient` = brightness far from it; `peak` = brightness under it; `stretch` above 1 makes it fade faster towards the floor than to the sides.
-  - `screamerDelayS`, `screamerS`: how long after the light comes on the screamer appears, and how long it stays.
+  - `screamerDelayS`, `screamerS`: how long after the light comes on the screamer appears, and how long it stays (also for the faces behind paintings).
   - The switch's size is `scale` of `light_switch` in `data/items.json`.
   - Changing these never changes the rest of a seed's layout.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
@@ -274,7 +289,8 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
   | `sfx/heartbeat_fast` | heartbeat, health below 50% |
   | `sfx/screamer_long` | health reached 0 |
-  | `sfx/screamer_short` | a screamer room's screamer jumps out |
+  | `sfx/screamer_short` | a screamer room's screamer jumps out, or a face behind a painting |
+  | `sfx/door_wait` | the long dark between two rooms (optional: no files = silent) |
   | `sfx/healed` | you take a pill |
   | `sfx/lever0` | a lever is pulled up or down (`lever01`, `lever02`...; not `lever_fail`/`lever_success`) |
   | `sfx/lever_fail` | a lever door is tried with the wrong combination |
@@ -294,6 +310,11 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
     - `chance`: how likely each attempt is to actually play (1 = always).
     - `volume: [min, max]`: each play gets a random volume in this range.
   - With the debug overlay open (`?debug`), press **A** to hear a random one right away.
+  - `silence`: the loop sometimes fades out completely, then comes back.
+    - `firstDelayS`, `gapS`, `chance`: when it is tried, like the random sounds.
+    - `holdS`: `[min, max]` seconds of silence. `fadeOutS`, `fadeInS`: how long the loop takes to go and to come back.
+    - `ghostChance`: how likely a ghost comes during the silence, `ghostDelayS` seconds after it starts (only where random ghosts can appear).
+    - Debug: **Q** starts one right away.
 - Loops: cut at a silent or zero-crossing point so they don't click when they repeat, and keep loudness roughly even across files.
 
 ## Tweaking the look

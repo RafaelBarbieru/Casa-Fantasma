@@ -233,9 +233,9 @@ export const TUTORIAL = [
     title: 'LEVERS',
     text: [
       'A level may have a room with one door and a row of levers. All the levers start up.',
-      'The door only opens with the levers set the right way: some up, some down. Maybe all up, maybe all down.',
+      'The door only opens with the levers set the right way: some up, some down.',
       'Click a lever to flip it, then try the door. If it is wrong, every lever snaps back up.',
-      'Get it right and the door becomes accessible.',
+      'Get it right and the door opens. The right way may be painted on a wall, behind a painting or a poster.',
     ],
     draw(k) {
       // A door on the left, the levers set up, down, down, down, up; the pointer on the last (glowing) one.

@@ -20,7 +20,9 @@
 //                                     (index = lever, 0 = up, 1 = down; all levers start up)
 //               lever?: index,        lever rooms only: lever `index` of the row (left -> right)
 //               key?: keyIndex,       paintings only: a key is hidden behind it
-//               pill?: true }],       paintings only: a pill is hidden behind it (never with a key)
+//               pill?: true,          paintings only: a pill is hidden behind it (never with a key)
+//               clue?: [0|1, ...] }], paintings only: the lever door's combination is painted on the wall behind
+//                                     it (never with a key or pill; see 6. below)
 //   }],
 //   keys: [{ door: itemId, room, at }]  key k opens the door with art `door` in rooms[room]; it is hidden in rooms[at].
 // }                                     keys[0] is the MASTER key (opens the exit door).
@@ -36,6 +38,8 @@
 //   6. From level 3 (levers.roomChance), maybe a lever room on an unused open-region door: one door, locked by a
 //      random combination of its levers, with a small region behind it that may (levers.masterChance) hold the
 //      master key. The lever door never needs a key. Rolled on its own random stream (leverRng).
+//      Its combination (levers.clueChance) is painted on the wall behind one painting or poster outside the lever
+//      region, picked on another stream of its own (clue).
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -250,8 +254,18 @@ export function generateWorld(seed, db, {
   const spots = out.flatMap((r) => (r.kind === 'paintings' ? r.items.filter((it) => it.key === undefined) : []));
   for (const it of prng.shuffle(spots).slice(0, nPills)) it.pill = true;
 
+  // Lever clue: its own stream too (always 2 draws), so it never shifts layouts, pills or dark rooms.
+  const crng = createRng((seed ^ 0xc10e5) >>> 0);
+  const clueRoll = crng.next(), clueAt = crng.next();
+  const leverDoor = out.find((r) => r.kind === 'levers')?.items.find((it) => it.levers);
+  if (leverDoor && clueRoll < (levers.clueChance ?? 1)) {
+    const spots = out.flatMap((r) => (r.kind === 'paintings' && r.stage !== leverStage
+      ? r.items.filter((it) => it.key === undefined && !it.pill) : []));
+    if (spots.length) spots[Math.floor(clueAt * spots.length)].clue = leverDoor.levers.slice();
+  }
+
   // Dark rooms: their own random stream as well (3 draws per room, always), so they never shift layouts or pills.
-  // Any room but the first and ghost rooms. A dark painting room with no key or pill behind any painting may become
+  // Any room but the first and ghost rooms. A dark painting room with no key, pill or clue behind any painting may become
   // a screamer room: emptied, only the light switch left.
   const drng = createRng((seed ^ 0xda4c0de) >>> 0);
   const darkChance = perLevel(dark.roomChance), scareChance = perLevel(dark.screamerChance);
@@ -259,7 +273,7 @@ export function generateWorld(seed, db, {
     const isDark = drng.next() < darkChance, switchAt = drng.next(), scare = drng.next() < scareChance;
     if (i === 0 || r.kind === 'ghost' || !isDark) return;
     r.dark = { switchAt };
-    if (scare && r.kind === 'paintings' && r.items.every((it) => it.key === undefined && !it.pill)) {
+    if (scare && r.kind === 'paintings' && r.items.every((it) => it.key === undefined && !it.pill && !it.clue)) {
       r.dark.screamer = true;
       r.items = [];
     }

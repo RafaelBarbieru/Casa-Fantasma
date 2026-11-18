@@ -4,6 +4,7 @@
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
 import { settings } from './settings.js';
+import { clueId } from './assets.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const pickText = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -27,7 +28,10 @@ const toLocal = (P, x, y) => {
 const tearAt = (R, qx, qy) => Math.hypot((qx - R.sx) * R.aspect, qy - R.sy) / R.dmax;
 const tearOf = (R) => R.reach * (1 - R.hp / R.max); // threshold after the scratches so far
 // What is hidden behind a painting or poster: the sprite id of the item, or null.
+// lootId = things you take (key, pills); hiddenId adds the lever clue painted on the wall (assets.js clueId), which
+// stays where it is.
 const lootId = (e) => (e.key !== undefined ? (e.key === 0 ? 'master_key' : 'key') : e.pill ? 'health' : null);
+const hiddenId = (e) => lootId(e) ?? (e.clue ? clueId(e.clue) : null);
 
 const TEXT = {
   locked: ["It's locked.", 'The door is locked.', "It won't open."],
@@ -36,6 +40,8 @@ const TEXT = {
   unlockMaster: ['The key turns. There is no way back.'],
   lootFound: ['Something was hidden behind the painting.', 'There is something behind it.'],
   posterLoot: ['Something was hidden under the poster.', 'There is something under the paper.'],
+  clueFound: ['Arrows are painted on the wall behind it.', 'Someone painted arrows on the wall.'],
+  clueUnder: ['There are arrows painted under the poster.', 'Someone painted arrows under the paper.'],
   posterNothing: ['Nothing under it.', 'Only bare wall underneath.'],
   torn: ['There is nothing left to tear.', 'Only scraps are left.'],
   nothing: ['Nothing behind it.', 'Only dust behind the frame.', 'Nothing.'],
@@ -96,7 +102,7 @@ export class Game {
     this.hover = null; // item object | 'back' | null
     this.time = 0;
     this.exposure = 0;
-    this.phase = 'in'; // 'in' | 'idle' | 'out' | 'end' (level card) | 'dead' (screamer)
+    this.phase = 'in'; // 'in' | 'idle' | 'out' | 'wait' (black between rooms) | 'end' (level card) | 'dead' (screamer)
     this.phaseT = 0;
     this.next = null;  // room index to enter after 'out', or EXIT
     this.world = null;
@@ -118,6 +124,9 @@ export class Game {
     this.switchT = null;  // seconds since this room's light switch was turned on (Infinity: it already was), or null
     this.jump = null;     // screamer-room jumpscare: { img, t } (t < 0 while it waits for the light), or null
     this.spawnAt = null;  // performance.now() ms when a random ghost appears in this room, or null
+    this.fakeAt = null;   // performance.now() ms of the next false alarm in this room, or null (see falseAlarm)
+    this.fake = null;     // false alarm running: { t, offS }, or null
+    this.wait = 0;        // seconds the screen stays black between rooms after the current door (phase 'wait')
     this.screamer = null; // image shown while dead
   }
 
@@ -224,13 +233,60 @@ export class Game {
     this.spawnAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' && perMin > 0
       ? now() + (CONFIG.ghost.graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000
       : null;
+    this.fake = null;
+    this.fakeAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' ? this.nextFalseAlarm(CONFIG.falseAlarm.graceS) : null;
     this.onRoomChange?.(this);
   }
 
   // The game was paused for ms: push the wall-clock timers (random ghost, lingering ghosts) back by as much.
   shiftClock(ms) {
     if (this.spawnAt !== null) this.spawnAt += ms;
+    if (this.fakeAt !== null) this.fakeAt += ms;
     for (const l of this.lingering.values()) l.goneAt += ms;
+  }
+
+  // performance.now() ms of the earliest wall-clock event in this room (random ghost, false alarm), or null.
+  // main.js wakes the sleeping loop then.
+  nextTimer() {
+    const t = [this.spawnAt, this.fakeAt].filter((x) => x !== null);
+    return t.length ? Math.min(...t) : null;
+  }
+
+  // A random ghost comes within ms, if one can come in this room at all (the ambience going silent may call it).
+  hurryGhost(ms) {
+    if (this.spawnAt !== null) this.spawnAt = Math.min(this.spawnAt, now() + ms);
+  }
+
+  // When the next false alarm comes: exponential waiting time (CONFIG.falseAlarm.perMin), at least graceS from now.
+  nextFalseAlarm(graceS) {
+    const perMin = perLevel(CONFIG.falseAlarm.perMin, this.world.level ?? 1);
+    return perMin > 0 ? now() + (graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000 : null;
+  }
+
+  // False alarm: the light flickers and dies exactly as when a ghost comes (same sound), stays off a moment, then
+  // flickers back on and nothing happens. Hover is suppressed while it runs, like with a ghost. Also the debug F key.
+  falseAlarm() {
+    const F = CONFIG.falseAlarm;
+    this.fake = { t: 0, offS: between(F.darkS) };
+    this.fakeAt = this.nextFalseAlarm(F.graceS + CONFIG.ghost.lampOffS + this.fake.offS + F.backS);
+    if (this.hover !== 'back' && this.hover !== 'pill') this.hover = null;
+    this.onSfx?.('flashlight');
+  }
+
+  // True when a false alarm can start now: a light is on (flashlight, or a lit dark room's ceiling light) and
+  // nothing else is going on.
+  canFalseAlarm() {
+    return this.phase === 'idle' && !this.fake && !this.ghost && !this.jump && !this.inDark()
+      && (this.lampT === null || this.ceiling > 0);
+  }
+
+  // Light multiplier of a running false alarm (1 = no effect).
+  fakeLight() {
+    if (!this.fake) return 1;
+    const off = CONFIG.ghost.lampOffS, { t, offS } = this.fake;
+    if (t < off) return dying(t);
+    if (t < off + offS) return 0;
+    return flickerIn((t - off - offS) / CONFIG.falseAlarm.backS);
   }
 
   // The flashlight flickers and dies (see dying()). sfx: play the flashlight sound; otherwise it is simply off.
@@ -250,6 +306,8 @@ export class Game {
       delay: between(gc.fadeDelayS), fadeIn: between(gc.fadeInS), // rolled per appearance (see CONFIG.ghost)
     };
     this.spawnAt = null;
+    this.fake = null;
+    this.fakeAt = null;
     if (this.hover !== 'back') this.hover = null;
     if (this.lampT === null) this.killLamp(true);
     else if (this.ceiling > 0) this.onSfx?.('flashlight'); // the ceiling light goes out instead
@@ -318,6 +376,8 @@ export class Game {
     this.phaseT = 0;
     this.ghost = null;
     this.spawnAt = null;
+    this.fake = null;
+    this.fakeAt = null;
     this.msg = null;
     this.hover = null;
     this.jump = null;
@@ -328,10 +388,10 @@ export class Game {
   // The item hidden behind painting `it` (a key or pills), placed on the wall near the top of the painting on the
   // `side` (-1 left, 1 right) that swings down. Same shape as a room item, plus `painting`. null if nothing is hidden.
   makeLoot(it, side = it.pose?.side ?? 1) {
-    const id = lootId(it.e);
+    const id = hiddenId(it.e);
     const sprite = id && this.assets.sprites.get(id);
     if (!sprite) return null;
-    const P = CONFIG.paintings, s = this.db.items[id]?.scale ?? 1, b = sprite.box;
+    const P = CONFIG.paintings, s = this.lootScale(it, id), b = sprite.box;
     const pw = it.sprite.w * it.s, lw = (b[2] - b[0]) * s, lh = (b[3] - b[1]) * s;
     // Centre of the visible part of the art: as far to the side as fits inside the painting, but not past 30%.
     const off = Math.max(0, Math.min(pw * 0.3, pw / 2 - lw / 2 - P.lootTop));
@@ -341,15 +401,24 @@ export class Game {
   // Loot item `id` with its visible box centred on (vx, vy), hidden behind room item `it` (stored as .painting,
   // whether it is a painting or a poster).
   placeLoot(it, id, vx, vy) {
-    const sprite = this.assets.sprites.get(id), s = this.db.items[id]?.scale ?? 1, b = sprite.box;
+    const sprite = this.assets.sprites.get(id), s = this.lootScale(it, id), b = sprite.box;
     const lw = (b[2] - b[0]) * s, lh = (b[3] - b[1]) * s;
     // Sprite origin so the visible box lands centred on (vx, vy).
     const x0 = vx - ((b[0] + b[2]) / 2) * s, y0 = vy - ((b[1] + b[3]) / 2) * s;
+    const clue = !!it.e.clue && !lootId(it.e); // painted on the wall: no shadow, can't be taken
     return {
-      painting: it, id, sprite, s, cx: vx, cy: vy, x0, y0, depth: this.db.items[id]?.depth ?? 3, glow: 0, shake: 0,
+      painting: it, id, sprite, s, cx: vx, cy: vy, x0, y0, clue, glow: 0, shake: 0,
+      depth: clue ? 0 : this.db.items[id]?.depth ?? 3,
       clip: 2, box: [vx - lw / 2, vy - lh / 2, vx + lw / 2, vy + lh / 2],
       rect: [x0 - sprite.ox * s, y0 - sprite.oy * s, sprite.tw * s, sprite.th * s],
     };
+  }
+
+  // Scale of hidden item `id` behind room item `it`. The lever clue shrinks to fit inside the painting/poster.
+  lootScale(it, id) {
+    if (!it.e.clue || lootId(it.e)) return this.db.items[id]?.scale ?? 1;
+    const C = CONFIG.levers.clue, b = this.assets.sprites.get(id).box, pb = it.sprite.box;
+    return Math.min(C.scale, (C.fit[0] * (pb[2] - pb[0]) * it.s) / (b[2] - b[0]), (C.fit[1] * (pb[3] - pb[1]) * it.s) / (b[3] - b[1]));
   }
 
   // A poster's tear state, rolled on its first scratch (Math.random, like the paintings' poses):
@@ -366,11 +435,11 @@ export class Game {
     const [sx, sy] = [[t, 0], [1, t], [t, 1], [0, t]][edge];
     const dmax = Math.max(...[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => Math.hypot((x - sx) * aspect, y - sy)));
     const R = { hp: max, max, sx, sy, aspect, dmax, reach: 1 - C.leftover, seed: Math.random() * 100, lu: 0.5, lv: 0.5, need: 0 };
-    const id = lootId(it.e), ls = id && this.assets.sprites.get(id);
+    const id = hiddenId(it.e), ls = id && this.assets.sprites.get(id);
     if (ls) {
       // Loot size in box units, then the spot (on a grid inside the poster) whose uncovering threshold is closest to a
       // random share of the tear. The noise can push the edge jagged/2 further, so that is added as a margin.
-      const s = this.db.items[id]?.scale ?? 1, lb = ls.box;
+      const s = this.lootScale(it, id), lb = ls.box;
       const lw = ((lb[2] - lb[0]) * s) / ((b[2] - b[0]) * it.s), lh = ((lb[3] - lb[1]) * s) / ((b[3] - b[1]) * it.s);
       const span = (size, i) => (size >= 0.92 ? 0.5 : 0.04 + size / 2 + (i / 6) * (0.92 - size));
       const needAt = (u, v) => C.jagged / 2 + 0.02 + Math.max(...[[-1, -1], [1, -1], [-1, 1], [1, 1]]
@@ -388,7 +457,7 @@ export class Game {
 
   // The item hidden under a scratched poster, at its spot from makeRip. null if nothing is hidden.
   makePosterLoot(it) {
-    const id = lootId(it.e), R = it.rip, b = it.sprite.box;
+    const id = hiddenId(it.e), R = it.rip, b = it.sprite.box;
     if (!id || !this.assets.sprites.get(id)) return null;
     const vx = it.x0 + (b[0] + R.lu * (b[2] - b[0])) * it.s, vy = it.y0 + (b[1] + R.lv * (b[3] - b[1])) * it.s;
     return this.placeLoot(it, id, vx, vy);
@@ -402,7 +471,7 @@ export class Game {
       const loot = this.makePosterLoot(it);
       if (loot) this.room.loot.push(loot);
     }
-    const R = it.rip, hidden = lootId(it.e) && !this.taken.has(it.uid);
+    const R = it.rip, hidden = lootId(it.e) && !this.taken.has(it.uid), clue = !!it.e.clue;
     if (R.hp <= 0) return void this.say(pickText(hidden ? TEXT.lootLeft : TEXT.torn));
     const covered = tearOf(R) < R.need;
     R.hp--;
@@ -412,8 +481,8 @@ export class Game {
       this.markExplored();
       this.onSfx?.('posterTear');
     } else this.onSfx?.('posterScratch');
-    if (hidden && covered && tearOf(R) >= R.need) this.say(pickText(TEXT.posterLoot));
-    else if (R.hp === 0 && !hidden) this.say(pickText(TEXT.posterNothing));
+    if ((hidden || clue) && covered && tearOf(R) >= R.need) this.say(pickText(clue ? TEXT.clueUnder : TEXT.posterLoot));
+    else if (R.hp === 0 && !hidden && !clue) this.say(pickText(TEXT.posterNothing));
   }
 
   // True while the item hidden under poster `it` is still (partly) covered by paper.
@@ -473,7 +542,13 @@ export class Game {
     this.markExplored();
     if (pose.kind === 'fall') this.onSfx?.('fall', CONFIG.paintings.fallSfxDelayS);
     else this.onSfx?.('painting');
-    this.say(pickText(loot ? TEXT.lootFound : pose.kind === 'fall' ? TEXT.fell : TEXT.nothing));
+    // Sometimes a face is waiting behind an empty painting: a quick screamer (no damage), like a screamer room's.
+    if (!loot && Math.random() < perLevel(CONFIG.paintings.screamerChance, this.world.level ?? 1)) {
+      this.jump = { img: this.pickScreamer(), t: -CONFIG.paintings.screamerDelayS };
+      this.hover = null;
+      return;
+    }
+    this.say(pickText(loot?.clue ? TEXT.clueFound : loot ? TEXT.lootFound : pose.kind === 'fall' ? TEXT.fell : TEXT.nothing));
   }
 
   // True when the current room is a lever room whose door has been opened (its levers stay put from then on).
@@ -595,11 +670,14 @@ export class Game {
     this.msg = { text, t: 0 };
   }
 
-  go(target) {
+  // door: leaving through a door (not back, not the master door), which sometimes keeps the screen black a while.
+  go(target, door = false) {
     this.next = target;
     this.phase = 'out';
     this.phaseT = 0;
     this.hover = null;
+    const tr = CONFIG.transition;
+    this.wait = door && target !== EXIT && Math.random() < perLevel(tr.waitChance, this.world.level ?? 1) ? between(tr.waitS) : 0;
   }
 
   // --- input -------------------------------------------------------------
@@ -609,7 +687,7 @@ export class Game {
     this.lastPointer = { p, kind };
     const h = this.phase === 'idle' && !this.jump ? this.hit(p, kind) : null;
     // With a ghost in the room nothing glows: you have to remember where the doors were.
-    this.hover = this.ghost && h !== 'back' && h !== 'pill' ? null : h;
+    this.hover = (this.ghost || this.fake) && h !== 'back' && h !== 'pill' ? null : h;
   }
 
   pointerDown(p, kind) {
@@ -654,7 +732,7 @@ export class Game {
         this.say(pickText(e.to === EXIT ? TEXT.unlockMaster : TEXT.unlock));
       }
       this.onSfx?.(e.to === EXIT ? 'levelEnd' : 'door');
-      this.go(e.to);
+      this.go(e.to, true);
       return;
     }
     // Painting: the first tap moves it; after that it only reminds you.
@@ -716,7 +794,7 @@ export class Game {
     if (this.room.spec.parent >= 0 && Math.abs(p.x - b.x) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2) return 'back';
     // In the dark only the light switch can be found; once it is on, the switch is just part of the wall.
     if (this.inDark()) return this.room.sw && this._hitItem(this.room.sw, p, kind) ? this.room.sw : null;
-    for (const l of this.room.loot) if (!l.painting.anim && !this.coveredLoot(l.painting) && this._hitItem(l, p, kind)) return l;
+    for (const l of this.room.loot) if (!l.clue && !l.painting.anim && !this.coveredLoot(l.painting) && this._hitItem(l, p, kind)) return l;
     const items = this.room.items;
     for (let i = items.length - 1; i >= 0; i--) if (this._hitItem(items[i], p, kind)) return items[i];
     return null;
@@ -742,8 +820,18 @@ export class Game {
           this.phaseT = 0;
           this.exposure = 0;
           this.msg = null;
+        } else if (this.wait > 0) {
+          this.phase = 'wait';
+          this.phaseT = 0;
+          this.exposure = 0;
+          this.onSfx?.('doorWait');
         } else this.enterRoom(this.next);
       }
+      busy = true;
+    } else if (this.phase === 'wait') {
+      // Black between rooms, a little longer than usual (see go()).
+      this.phaseT += dt;
+      if (this.phaseT >= this.wait) this.enterRoom(this.next);
       busy = true;
     } else if (this.phase === 'in') {
       this.phaseT += dt / tr.inS;
@@ -792,7 +880,20 @@ export class Game {
 
     // Ghosts: random appearance, fade-in, health drain.
     if (!this.ghost && this.spawnAt !== null && this.phase === 'idle' && now() >= this.spawnAt) this.spawnRandomGhost();
-    if (this.ghost && this.phase !== 'end') {
+    // False alarms: only while a light is on and nothing else is going on; otherwise tried again a bit later.
+    if (this.fakeAt !== null && !this.fake && this.phase === 'idle' && now() >= this.fakeAt) {
+      if (this.canFalseAlarm()) this.falseAlarm();
+      else this.fakeAt = this.nextFalseAlarm(CONFIG.falseAlarm.graceS);
+    }
+    if (this.fake) {
+      this.fake.t += dt;
+      if (this.fake.t >= CONFIG.ghost.lampOffS + this.fake.offS + CONFIG.falseAlarm.backS) {
+        this.fake = null;
+        if (this.lastPointer && this.phase === 'idle') this.pointerMove(this.lastPointer.p, this.lastPointer.kind);
+      }
+      busy = true;
+    }
+    if (this.ghost && this.phase !== 'end' && this.phase !== 'wait') {
       const G = this.ghost;
       G.t += dt;
       G.alpha = Math.min(1, Math.max(0, (G.t - G.delay) / G.fadeIn));
@@ -908,7 +1009,8 @@ export class Game {
       return { light: { x: L.x, y: L.y, r: f.radius, exposure: 0 }, bg: null, items: [], overlay: scream };
     }
     // Shadows fall away from whichever light is stronger: the flashlight (held low right) or the ceiling light.
-    const D = CONFIG.darkRooms, ceil = this.exposure * this.ceiling, flash = this.exposure * this.lamp;
+    const fk = this.fakeLight(); // a false alarm dims whichever light is on
+    const D = CONFIG.darkRooms, ceil = this.exposure * this.ceiling * fk, flash = this.exposure * this.lamp * fk;
     const [srcX, srcY] = ceil > flash ? [D.light.x, D.light.y] : [L.x + f.handOffset[0], L.y + f.handOffset[1]];
     const P = CONFIG.paintings;
     const draw = (it) => {
@@ -963,7 +1065,7 @@ export class Game {
       }
     }
     const G = this.ghost;
-    if (G && G.alpha > 0 && this.phase !== 'end') {
+    if (G && G.alpha > 0 && this.phase !== 'end' && this.phase !== 'wait') {
       // Self-lit and additive: the art's black background adds nothing, only the face shows.
       const sp = G.sprite, s = G.s, d = CONFIG.ghost.drift;
       const cx = G.x + Math.sin(this.time * 0.7) * d, cy = G.y + Math.sin(this.time * 1.1) * d * 0.6;

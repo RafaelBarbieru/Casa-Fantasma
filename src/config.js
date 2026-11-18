@@ -34,6 +34,19 @@ export const CONFIG = {
     crackPx: 5,         // crack line width, scene px (one PS1 pixel is 4)
     crackDarken: 0.85,  // 0..1 how dark the cracks are
     fallenGain: 0.8,    // a fallen painting is a bit darker
+    // Sometimes a face waits behind a painting that hides nothing: a quick screamer (sfx screamerShort, an image
+    // from data/ghosts.json "screamers"), no damage. Per level (index 0 = level 1, the last value repeats).
+    screamerChance: [0, 0, 0.04, 0.06, 0.08, 0.1, 0.12], // none on levels 1-2
+    screamerDelayS: 0.25, // after the tap, before it jumps out (the painting is already moving)
+  },
+
+  // False alarms: the light flickers and dies exactly as when a ghost comes (same sound), stays dark a moment, then
+  // comes back and nothing happens. Not in a level's first room or ghost rooms. Per-level lists: index 0 = level 1.
+  falseAlarm: {
+    perMin: [0, 0.4, 0.5, 0.6, 0.7], // false alarms per minute spent in a room (0 = never)
+    graceS: 4,          // never in the first seconds after entering a room (or right after another one)
+    darkS: [1.2, 2.8],  // [min, max] seconds the light stays off; longer than a ghost takes to show up
+    backS: 0.7,         // the light flickers back on over this long
   },
 
   // Posters (data/items.json "kind": "poster", src/game.js). Each tap scratches a piece off, ripping outward from a
@@ -102,6 +115,11 @@ export const CONFIG = {
     inS: 0.7,
     winOutS: 1.6,       // slow fade after the master door
     winHoldS: 3,        // "Level N" card before the next level starts (a tap skips it)
+    // Sometimes, going through a door (not back), the screen stays black a while before the next room shows
+    // (sfx doorWait plays then, if it has sounds). Per level (index 0 = level 1, the last value repeats).
+    waitChance: [0.15, 0.2, 0.25, 0.3],
+    waitS: [1.2, 2.5],  // [min, max] seconds of black
+    waitAmbience: 0.5,  // chance one of the random ambience sounds (ambience.random.pool) plays in that black
   },
 
   // PS1 look: the scene renders into a small framebuffer, then is upscaled with hard pixels and
@@ -158,6 +176,7 @@ export const CONFIG = {
     heartbeatFast: { files: 'sfx/heartbeat_fast' },
     screamer: { files: 'sfx/screamer_long' },   // health reached 0
     screamerShort: { files: 'sfx/screamer_short' }, // jumpscare when the light comes on in a screamer room
+    doorWait: { files: 'sfx/door_wait' },       // the long black pause between rooms (transition.waitChance), e.g. a creak
     lightSwitch: { files: 'sfx/flashlight' },   // a dark room's light switch is turned on (same click as the flashlight)
     healed: { files: 'sfx/healed' },            // a pill is taken
     lever: { files: 'sfx/lever0' },             // a lever is pulled up or down (lever01, lever02...; not lever_fail)
@@ -229,7 +248,7 @@ export const CONFIG = {
   // light comes on (the flashlight stays off). Per-level lists: index 0 = level 1, the last value repeats.
   darkRooms: {
     roomChance: [0.2, 0.2, 0.25, 0.25, 0.3],      // chance any room except the first is dark (doors, keys and all)
-    screamerChance: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4], // chance a dark room with nothing to find (paintings, no key or
+    screamerChance: [0, 0, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4], // (none on levels 1-2) chance a dark room with nothing to find (paintings, no key or
                                                  // pill behind them) is a screamer room instead: empty but for the
                                                  // switch, and a screamer jumps out when the light comes on
     switchY: [560, 640, 720], // heights tried for the switch (scene px, centre), first one with room to spare wins
@@ -256,6 +275,14 @@ export const CONFIG = {
     resetS: 0.12,       // ...and snap up this fast
     travel: 0.27,       // how far the handle sits from the middle of the base, up or down (share of the base height)
     bulge: 0.15,        // the handle looks this much bigger halfway (pointing at you), 0 = a flat slide
+    // The combination, painted as a row of arrows (up = lever up, left -> right) on the wall behind one painting or
+    // poster somewhere outside the lever region. Drawn by the game itself (src/assets.js makeClueSprite).
+    clueChance: 1,      // chance a level's lever room has its clue somewhere (0 = never, guess it)
+    clue: {
+      scale: 1.6,       // arrow size (1 = 36 x 70 scene px per arrow)...
+      fit: [0.75, 0.4], // ...but at most this share of the hiding painting's width and height
+      paint: [150, 24, 18], // paint colour (RGB 0-255)
+    },
   },
 
   // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the main menu shows (START begins a new run at level 1).
@@ -280,6 +307,19 @@ export const CONFIG = {
       gapS: [25, 60],        // [min, max] seconds between attempts
       chance: 0.8,           // 0..1 probability that an attempt actually plays (adds irregularity)
       volume: [0.4, 0.8],    // [min, max] random volume per play
+    },
+
+    // Silences: now and then the background loop fades out completely (no one-shots either), then comes back.
+    // Sometimes a random ghost follows (only where random ghosts can appear: config.ghost.randomPerMin).
+    silence: {
+      firstDelayS: [60, 120], // [min, max] seconds after START before the first try
+      gapS: [70, 160],        // [min, max] seconds between tries
+      chance: 0.7,            // 0..1 probability that a try actually goes silent
+      holdS: [10, 22],        // [min, max] seconds of silence
+      fadeOutS: 2.5,          // the loop fades out over this long...
+      fadeInS: 5,             // ...and back in over this long
+      ghostChance: 0.35,      // chance a random ghost comes during the silence...
+      ghostDelayS: [3, 8],    // ...this many seconds after it starts
     },
   },
 };

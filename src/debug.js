@@ -5,12 +5,13 @@
 import { CONFIG } from './config.js';
 
 export class Debug {
-  constructor({ game, renderer, regenerate, nextLevel, playRandomAmbience }) {
+  constructor({ game, renderer, regenerate, nextLevel, playRandomAmbience, startSilence }) {
     this.nextLevel = nextLevel;
     this.game = game;
     this.r = renderer;
     this.regenerate = regenerate;
     this.playRandomAmbience = playRandomAmbience;
+    this.startSilence = startSilence;
     this.on = new URLSearchParams(location.search).has('debug');
     this.frames = 0;
     this.fps = 0;
@@ -33,6 +34,8 @@ export class Debug {
       }
       if (k === 'b') g.enterRoom(0);
       if (k === 'g') g.spawnRandomGhost();
+      if (k === 'f' && g.canFalseAlarm()) g.falseAlarm();
+      if (k === 'q') console.info('[casa] silence', this.startSilence?.() ? 'started' : 'skipped');
       if (k === 'h') g.health = 1;
       if (k === 'd') g.health = Math.max(0.01, g.health - 0.2);
       if (k === 'p') g.pills++;
@@ -74,6 +77,7 @@ export class Debug {
       if (it.levers) t += ` [levers ${it.levers.map((v) => (v ? 'v' : '^')).join('')}]`;
       if (it.key !== undefined) t += ` {key ${it.key}}`;
       if (it.pill) t += ' {pill}';
+      if (it.clue) t += ` {clue ${it.clue.map((v) => (v ? 'v' : '^')).join('')}}`;
       if (g.room.items.find((x) => x.e === it)?.explored) t += '  (explored)';
       lines.push(t);
     }
@@ -81,12 +85,12 @@ export class Debug {
     lines.push(
       `held [${g.keys.join(', ')}]  pills ${g.pills}  (level has ${w.rooms.reduce((n, r) => n + r.items.filter((it) => it.pill).length, 0)},` +
         ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
-      `lever room ${w.rooms.findIndex((r) => r.kind === 'levers')} (-1 = none)  levers now ${(g.leverPos.get(g.roomIndex) ?? []).map((v) => (v ? 'v' : '^')).join('') || '-'}`,
+      `lever room ${w.rooms.findIndex((r) => r.kind === 'levers')} (-1 = none)  clue in room ${w.rooms.findIndex((r) => r.items.some((it) => it.clue))}  levers now ${(g.leverPos.get(g.roomIndex) ?? []).map((v) => (v ? 'v' : '^')).join('') || '-'}`,
       `dark rooms ${w.rooms.flatMap((r, i) => (r.dark ? [i + (r.dark.screamer ? '!' : '')] : [])).join(', ') || '-'}  (! = screamer)`,
       `ambience ${w.ambience}`,
       `render ${this.fps} fps (on demand)`,
       `buffer ${v.bw}x${v.bh} dpr ${v.dpr.toFixed(2)}`,
-      '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot',
+      '[`] hide  [N] new world  [L] next level  [K] all keys  [B] start room  [A] one-shot  [F] false alarm  [Q] silence',
       '[G] ghost  [H] heal  [D] -20% health  [P] +1 pill',
     );
     this.el.textContent = lines.join('\n');

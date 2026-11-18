@@ -159,6 +159,13 @@ export function playLoop(name, { volume = 1, fadeIn = 2, fadeOut = 1.5 } = {}) {
   startBed();
 }
 
+// Fade the looping ambience out (silent = true) or back to its volume, over s seconds. A new playLoop() also
+// brings it back.
+export function duckLoop(silent, s) {
+  if (!bed || !bedWant) return;
+  rampBed(silent ? 0 : bedWant.volume, s);
+}
+
 export const audioUnlocked = () => unlocked;
 
 // Call from a user gesture (start overlay). Browsers create the context suspended, and media

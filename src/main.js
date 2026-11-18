@@ -1,6 +1,6 @@
 // Boot + on-demand render loop.
 import { Renderer } from './renderer.js';
-import { loadDB, loadAssets } from './assets.js';
+import { loadDB, loadAssets, addClueSprites } from './assets.js';
 import { generateWorld, seedFromUrl, levelFromUrl } from './world.js';
 import { attachInput } from './input.js';
 import { Game } from './game.js';
@@ -10,7 +10,7 @@ import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex, setVolumes } from 
 import { initSfx, playRole } from './sfx.js';
 import { startHeartbeat, beatEnvelope } from './heartbeat.js';
 import { CONFIG } from './config.js';
-import { setLevelAmbience, startRandomAmbience, playRandomAmbience, ambienceLoops, ambiencePool } from './ambience.js';
+import { setLevelAmbience, startRandomAmbience, playRandomAmbience, startSilence, ambienceLoops, ambiencePool } from './ambience.js';
 import { Menu } from './menu.js';
 import { settings, loadSettings } from './settings.js';
 
@@ -44,7 +44,9 @@ async function boot() {
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   // sound: false when the main menu is shown next (its START plays it).
   const startLevel = (seed, level, sound = true) => {
-    game.setWorld(newWorld(seed, level, game.world?.ambience));
+    const world = newWorld(seed, level, game.world?.ambience);
+    addClueSprites(world, assets.sprites);
+    game.setWorld(world);
     setLevelAmbience(game.world);
     if (sound && audioUnlocked()) playRole('levelStart');
     console.info('[casa] level', level, 'seed', game.world.seed, game.world);
@@ -58,9 +60,13 @@ async function boot() {
     startLevel((Math.random() * 2 ** 32) >>> 0, 1, sound);
   };
   game.onDeath = () => toMainMenu(); // health 0 -> screamer -> main menu (a new run, START begins it)
-  game.onSfx = (role, delay) => playRole(role, delay);
+  game.onSfx = (role, delay) => {
+    playRole(role, delay);
+    // The long dark between rooms sometimes brings one of the random ambience sounds.
+    if (role === 'doorWait' && Math.random() < CONFIG.transition.waitAmbience) playRandomAmbience();
+  };
   const debug = new Debug({
-    game, renderer, playRandomAmbience,
+    game, renderer, playRandomAmbience, startSilence,
     regenerate: () => startLevel((Math.random() * 2 ** 32) >>> 0, game.world.level),
     nextLevel: () => game.onWorldEnd(),
   });
@@ -85,7 +91,13 @@ async function boot() {
       playRole('levelStart');
       if (!heartbeat) startHeartbeat(() => (menu.open || game.phase === 'dead' || game.phase === 'end' ? null : game.health), wake);
       heartbeat = true;
-      startRandomAmbience();
+      // Silences only while playing; sometimes a random ghost comes during one.
+      startRandomAmbience(() => {
+        if (!started || menu.open || game.phase !== 'idle') return false;
+        const S = CONFIG.ambience.silence, [a, b] = S.ghostDelayS;
+        if (Math.random() < S.ghostChance) game.hurryGhost((a + Math.random() * (b - a)) * 1000);
+        wake();
+      });
       game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking
       backToGame();
     },
@@ -118,7 +130,9 @@ async function boot() {
   const pb = CONFIG.hud.pause;
   const onPause = (p) => Math.abs(p.x - pb.x) <= pb.w / 2 && Math.abs(p.y - pb.y) <= pb.h / 2;
   if (new URLSearchParams(location.search).has('debug')) window.casa = { game, renderer, assets, db }; // console access
-  game.setWorld(newWorld(seedFromUrl(), levelFromUrl()));
+  const world = newWorld(seedFromUrl(), levelFromUrl());
+  addClueSprites(world, assets.sprites);
+  game.setWorld(world);
   setLevelAmbience(game.world); // queued; starts on the start-overlay gesture
   console.info('[casa] level', game.world.level, 'seed', game.world.seed, game.world);
 
@@ -142,10 +156,11 @@ async function boot() {
     if (busy || debug.on) raf = requestAnimationFrame(loop);
     else {
       last = 0;
-      // The loop sleeps when nothing moves; a random ghost must still be able to appear on time.
-      if (game.spawnAt !== null) {
+      // The loop sleeps when nothing moves; a random ghost or a false alarm must still come on time.
+      const at = game.nextTimer();
+      if (at !== null) {
         clearTimeout(ghostTimer);
-        ghostTimer = setTimeout(wake, Math.max(0, game.spawnAt - performance.now()) + 5);
+        ghostTimer = setTimeout(wake, Math.max(0, at - performance.now()) + 5);
       }
     }
   };
