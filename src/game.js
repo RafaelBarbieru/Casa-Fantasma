@@ -551,6 +551,8 @@ export class Game {
       pills: this.phase === 'dead' || this.phase === 'end' ? 0 : this.pills,
       pillHover: this.hover === 'pill',
       title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
+      // Quantized so the HUD is not redrawn for invisible changes while a ghost drains it.
+      health: this.phase === 'dead' || this.phase === 'end' ? null : Math.round(Math.max(0, this.health) * 200) / 200,
     };
   }
 

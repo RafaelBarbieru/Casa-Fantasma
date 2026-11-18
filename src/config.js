@@ -168,13 +168,32 @@ export const CONFIG = {
     perLevel: [0, 0.35, 0.6, 1, 1.3, 1.6],
   },
 
-  // Hidden health is only heard: nothing above `start`; slow heartbeat down to `fastBelow`, fast heartbeat below.
+  // Heartbeat sound: nothing above `start`; slow heartbeat down to `fastBelow`, fast heartbeat below.
   // Gap between beats (s) goes from the first value to the second as health falls through each band.
   heartbeat: {
     start: 0.95,
     fastBelow: 0.5,
     slowGapS: [1.0, 0.3],
     fastGapS: [0.6, 0.05],
+    // When each sound's "lub" and "dub" hit (s from the start of the sound) and how hard the HUD heart jumps for
+    // each (0..1). Measured from audio-src/sfx/heartbeat_*.wav; update if those sounds are replaced.
+    thumps: {
+      heartbeatSlow: [[0, 0.55], [0.3, 1]],
+      heartbeatFast: [[0, 0.55], [0.19, 1]],
+    },
+    pulse: { attackS: 0.05, decayS: 0.22 }, // shape of one visual thump
+  },
+
+  // Health on screen (art: data/items.json "heart"), bottom left. The heart drains from the top as health falls
+  // (the lost part goes dark and grey) and jumps with every heartbeat. Below the heartbeat's `start`, a red
+  // vignette creeps in from the screen edges, stronger as health falls, and throbs with the beat.
+  healthHud: {
+    x: 100, y: 975,     // heart centre, scene px
+    size: 36,           // heart height, HUD px (the HUD is ps1.width wide: 480)
+    beatScale: 0.18,    // extra size at the peak of a thump
+    drained: 0.3,       // brightness of the lost part (0 = black)
+    vignette: 0.55,     // vignette opacity at zero health (0 = off)
+    vignetteBeat: 0.35, // extra opacity at the peak of a thump (scaled by how low health is)
   },
 
   // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the game restarts at level 1.

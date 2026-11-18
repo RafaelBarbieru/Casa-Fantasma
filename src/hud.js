@@ -85,16 +85,20 @@ export class Hud {
     return lines;
   }
 
-  // state = { message, chars, keys:[{ door: doorArtId, master }], back, backHover, pills: count, pillHover, title }
-  // Redraws only when something visible changed.
+  // state = { message, chars, keys:[{ door: doorArtId, master }], back, backHover, pills: count, pillHover, title,
+  //           health: 0..1 | null (hidden), pulse: 0..1 heartbeat thump }
+  // Redraws only when something visible changed (callers quantize health/pulse so that is not every frame).
   update(st) {
-    const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.pills, st.pillHover, st.title]);
+    const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.pills, st.pillHover, st.title,
+      st.health, st.pulse]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.version++;
     const c = this.ctx, W = this.w, H = this.h;
     c.clearRect(0, 0, W, H);
     c.imageSmoothingEnabled = true;
+
+    if (st.health !== null && st.health !== undefined) this.health(st.health, st.pulse ?? 0);
 
     // Keys held: pixel key + a thumbnail of the door it opens.
     let x = 8;
@@ -156,5 +160,62 @@ export class Hud {
       const s = 2;
       this.text(st.title, (W - textWidth(st.title, s)) >> 1, (H >> 1) - 7, '#c9b48a', s);
     }
+  }
+
+  // Red vignette (low health only) + the heart at the bottom left, drained from the top down to `h`.
+  health(h, pulse) {
+    const c = this.ctx, W = this.w, H = this.h, cfg = CONFIG.healthHud;
+    const low = Math.max(0, Math.min(1, 1 - h / CONFIG.heartbeat.start)); // 0 at the heartbeat's start -> 1 at death
+    const a = low * (cfg.vignette + cfg.vignetteBeat * pulse);
+    if (a > 0.004) {
+      const d = Math.hypot(W, H) / 2;
+      const g = c.createRadialGradient(W / 2, H / 2, d * (0.75 - 0.3 * low), W / 2, H / 2, d);
+      g.addColorStop(0, 'rgba(110,0,0,0)');
+      g.addColorStop(1, `rgba(110,0,0,${Math.min(1, a).toFixed(3)})`);
+      c.fillStyle = g;
+      c.fillRect(0, 0, W, H);
+    }
+
+    const sp = this.sprites.get('heart');
+    if (!sp) return;
+    const [bx0, by0, bx1, by1] = sp.box, bw = bx1 - bx0, bh = by1 - by0;
+    const k = (cfg.size * (1 + cfg.beatScale * pulse)) / bh; // native px -> HUD px
+    const dw = Math.round(bw * k), dh = Math.round(bh * k);
+    const x0 = this.sx(cfg.x) - (dw >> 1), y0 = this.sy(cfg.y) - (dh >> 1);
+    // Rows above `cut` (dest px from the top) are lost health.
+    const cut = Math.round(dh * (1 - Math.max(0, Math.min(1, h))));
+    const src = (y) => sp.oy + by0 + (y / dh) * bh; // dest row -> source row
+    c.drawImage(this.drainedHeart(sp), 0, 0, bw, bh, x0, y0, dw, dh);
+    if (cut < dh) {
+      const sy0 = src(cut), sxx = sp.ox + bx0;
+      c.drawImage(sp.canvas, sxx, sy0, bw, sp.oy + by1 - sy0, x0, y0 + cut, dw, dh - cut);
+      if (pulse > 0) {
+        // Flush of blood on each thump.
+        c.globalCompositeOperation = 'lighter';
+        c.globalAlpha = 0.45 * pulse;
+        c.drawImage(sp.canvas, sxx, sy0, bw, sp.oy + by1 - sy0, x0, y0 + cut, dw, dh - cut);
+        c.globalAlpha = 1;
+        c.globalCompositeOperation = 'source-over';
+      }
+    }
+  }
+
+  // The heart's tight box, greyed and darkened (built once).
+  drainedHeart(sp) {
+    if (this._drained?.sp === sp) return this._drained.canvas;
+    const [bx0, by0, bx1, by1] = sp.box, w = bx1 - bx0, h = by1 - by0;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const c = cv.getContext('2d');
+    c.drawImage(sp.canvas, sp.ox + bx0, sp.oy + by0, w, h, 0, 0, w, h);
+    const img = c.getImageData(0, 0, w, h), px = img.data, b = CONFIG.healthHud.drained;
+    for (let i = 0; i < px.length; i += 4) {
+      const g = (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11) * b;
+      px[i] = g * 1.15; px[i + 1] = g; px[i + 2] = g; // a hint of warmth so it still reads as flesh
+    }
+    c.putImageData(img, 0, 0);
+    this._drained = { sp, canvas: cv };
+    return cv;
   }
 }

@@ -45,7 +45,7 @@ src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf ca
 src/renderer.js     WebGL1: 2 programs (bg, item), 1 unit quad VBO, texture cache (WeakMap by source), letterbox view, context-loss restore
 src/shaders.js      GLSL. lightAt() = flashlight mask, evaluated per fragment in every draw (no fullscreen pass)
 src/game.js         state: room, inventory (keys/unlocked/searched), light, per-item hover/glow, transitions ('in'|'idle'|'out'|'end'), door/painting/back taps, hudState(), frame() -> draw list
-src/heartbeat.js    hidden-health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat
+src/heartbeat.js    health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat; beatEnvelope(now) -> 0..1 for the HUD heart
 src/sfx.js          sound roles: CONFIG.sfx prefix -> random pool from assets/audio/index.json, preload modes, playRole()
 src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font, typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change
 src/input.js        Pointer Events -> move/down/tap/leave in scene coords. Touch moves the light only while the finger is down
@@ -100,12 +100,13 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - `summon()`: plays flashlight sfx; update(): `lamp` flickers then 0 (`exposure * lamp`), ghost alpha fades after `fadeDelayS` (plays ghostSpotted), `health -= drainPerS*dt`. While a ghost is present hover is suppressed except the back arrow (no door glow).
 - Ghost draw: FS_ITEM `uFx = [selfLit, opacity, gain, additive]`; additive output alpha 0, so the opaque black PNG background is invisible.
 - Pills: `CONFIG.pills.perLevel` (expected count: floor + fractional chance) placed in world.js on keyless paintings (`item.pill`) with a SEPARATE rng (`seed ^ 0x50111e5`), after dressing, so pills never shift layouts. `game.pills` persists across levels (main resets it with health on death). HUD icon = `data/items.json` "health" sprite (placement [], so never placed) at `CONFIG.hud.pills`; `hit()` returns 'pill' (allowed while a ghost is present) -> `usePill()`: health += `pills.heal` (of full), cap 1, sfx `healed`. Debug P = +1 pill.
+- Health HUD: `hudState().health` (quantized, null when dead/end) + main adds `pulse` = `beatEnvelope()` (quantized; the loop stays busy while > 0, heartbeat calls wake() per beat). `Hud.health()`: red radial vignette below `heartbeat.start` + `data/items.json` "heart" sprite (bottom left, `CONFIG.healthHud`), lost rows drawn from a cached grey copy, beat = scale + 'lighter' flush. Beat timing: `heartbeat.thumps[role]` = [[offsetS, strength]] measured from the wavs.
 - health <= 0: `die()` -> phase 'dead', screamer image as `frame.overlay` (pHud quad, flashing/jitter), screamer sfx; after `screamer.holdS` `onDeath` -> main restarts level 1 (new seed, health 1). Health persists across levels.
 
 ## Next likely work
 - Developer tools: slot editor (drag slots on the room, write rooms.json) and an event/trigger editor. Keep `world.js` and the data formats editor-friendly.
 - Per-room asset loading or preloading once the asset count grows (right now everything loads up front).
-- A real ending; health feedback beyond sound if wanted (it is deliberately hidden).
+- A real ending.
 
 ## Verify
 `npm run dev`, then open `http://localhost:5173/?debug&seed=42` (see the seed 42 notes above).

@@ -48,9 +48,11 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - The flashlight dies and nothing glows any more, so you have to remember where the doors were and get out: back, or through another door.
   - The ghost stays in that room for 1 to 10 seconds after you escape, so going straight back means meeting it again.
 - The higher the level, the more ghost rooms and random ghosts there are.
-- **Health is hidden.** Ghosts drain it every second you share a room with them (about 8 seconds from full to dead). You only *hear* it:
+- **Health.** Ghosts drain it every second you share a room with them (about 8 seconds from full to dead). You hear it and see it:
   - after losing 5%, a slow heartbeat starts, about one beat a second;
-  - it speeds up as health falls, switches to a fast heartbeat below 50%, and keeps getting faster towards 0.
+  - it speeds up as health falls, switches to a fast heartbeat below 50%, and keeps getting faster towards 0;
+  - the heart at the bottom left (`art-src/heart.png`) shows how much is left: the lost part turns dark grey from the top down, and the heart jumps on every "lub" and "dub" of the heartbeat sound;
+  - a red glow creeps in from the screen edges once the heartbeat starts, getting stronger as health falls and throbbing with each beat.
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
 - **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
   - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
@@ -80,7 +82,8 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - `fallSfxDelayS`: delay of the fall sound. 0 = when you click; set it to the same value as `fallS` to play it exactly when the painting hits the floor.
   - `crackPx`, `crackDarken`, `fallenGain`: crack thickness and darkness, and how much darker a fallen painting is.
   - The key pictures are `art-src/key.png` and `art-src/master_key.png` (pills use `health.png`); their size on the wall is `scale` in `data/items.json`.
-- `heartbeat`: when it starts, when it switches to fast, and the gaps between beats.
+- `heartbeat`: when it starts, when it switches to fast, and the gaps between beats. `thumps` says when the heart picture jumps within each heartbeat sound; update it if you replace those sounds.
+- `healthHud`: the heart's position and size, how much it jumps per beat, how dark the lost part is, and how strong the red edge glow gets.
 - `screamer`: how long it lasts and how fast it flashes.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
 

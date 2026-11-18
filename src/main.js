@@ -8,7 +8,7 @@ import { Debug } from './debug.js';
 import { Hud } from './hud.js';
 import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex } from './audio.js';
 import { initSfx, playRole } from './sfx.js';
-import { startHeartbeat } from './heartbeat.js';
+import { startHeartbeat, beatEnvelope } from './heartbeat.js';
 import { CONFIG } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience, ambienceLoops, ambiencePool } from './ambience.js';
 
@@ -69,10 +69,11 @@ async function boot() {
     raf = 0;
     const dt = last ? Math.min(0.05, (t - last) / 1000) : 1 / 60;
     last = t;
-    const busy = game.update(dt);
+    const pulse = Math.round(beatEnvelope(performance.now()) * 20) / 20; // HUD heart thump
+    const busy = game.update(dt) || pulse > 0;
     const draw = busy || dirty;
     if (draw) {
-      hud.update(game.hudState());
+      hud.update({ ...game.hudState(), pulse });
       renderer.draw(game.frame(), hud);
     }
     dirty = false;
@@ -119,7 +120,7 @@ async function boot() {
     overlay.classList.add('hidden');
     unlockAudio();
     playRole('levelStart');
-    startHeartbeat(() => (game.phase === 'dead' || game.phase === 'end' ? null : game.health));
+    startHeartbeat(() => (game.phase === 'dead' || game.phase === 'end' ? null : game.health), wake);
     startRandomAmbience();
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
     game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking
