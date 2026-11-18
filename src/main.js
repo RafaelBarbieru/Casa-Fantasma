@@ -39,7 +39,7 @@ async function boot() {
   const hud = new Hud(assets.sprites);
   // avoidAmbience: the previous level's loop, so two levels in a row never share one.
   const newWorld = (seed, level, avoidAmbience = null) => generateWorld(seed, db, {
-    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, level,
+    ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, levers: CONFIG.levers, level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
   // sound: false when the main menu is shown next (its START plays it).
@@ -51,13 +51,13 @@ async function boot() {
     wake();
   };
   game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
-  // A new run: level 1 with a new maze, full health and no pills (after death, or QUIT in the pause menu).
+  // A new run: level 1 with a new maze, full health and no pills (after death or QUIT: see toMainMenu).
   const newRun = (sound) => {
     game.health = 1;
     game.pills = 0;
     startLevel((Math.random() * 2 ** 32) >>> 0, 1, sound);
   };
-  game.onDeath = () => newRun(true); // health 0 -> screamer -> start over
+  game.onDeath = () => toMainMenu(); // health 0 -> screamer -> main menu (a new run, START begins it)
   game.onSfx = (role, delay) => playRole(role, delay);
   const debug = new Debug({
     game, renderer, playRandomAmbience,
@@ -93,12 +93,15 @@ async function boot() {
       game.shiftClock(performance.now() - pausedAt);
       backToGame();
     },
-    onQuit: () => {
-      started = false;
-      newRun(false);
-      menu.show('main');
-    },
+    onQuit: () => toMainMenu(),
   });
+  // Back to the main menu with a fresh run behind it (QUIT, or death). START plays levelStart, so no sound here.
+  function toMainMenu() {
+    started = false;
+    newRun(false);
+    menu.show('main');
+    wake();
+  }
   const pause = (sound) => {
     if (!started || menu.open || game.phase === 'dead') return;
     pausedAt = performance.now();

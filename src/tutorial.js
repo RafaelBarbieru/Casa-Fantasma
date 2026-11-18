@@ -3,6 +3,7 @@
 // drawn into the HUD canvas, so it gets the same PS1 colour reduction as the game.
 // Pixel font: letters, digits and . , ' ! ? - : / % < > only.
 import { KEY_ICON } from './hud.js';
+import { CONFIG } from './config.js';
 
 export const PANEL = { x: 300, y: 44, w: 152, h: 160 }; // HUD px
 
@@ -99,13 +100,24 @@ function keyChip(k, x, y, door, master) {
   if (sp) sprite(k, door, x + 10 + tw / 2, y + th / 2, th);
 }
 
+// A lever (data/items.json "lever_base" + "lever_handle"), base `h` HUD px tall, centred on (cx, cy), handle up or
+// down. The handle keeps the game's size ratio to the base and sits CONFIG.levers.travel from the middle.
+function lever(k, cx, cy, h, down, o = {}) {
+  const base = k.sprites.get('lever_base'), hs = k.sprites.get('lever_handle');
+  if (!base) return;
+  sprite(k, 'lever_base', cx, cy, h, o);
+  if (!hs) return;
+  const hh = (h * (hs.box[3] - hs.box[1])) / (base.box[3] - base.box[1]);
+  sprite(k, 'lever_handle', cx, cy + (down ? 1 : -1) * CONFIG.levers.travel * h, hh);
+}
+
 // --- the pages ------------------------------------------------------------------------------------------------
 export const TUTORIAL = [
   {
     title: 'THE HOUSE',
     text: [
       'Every level is a maze of rooms. One door in each level is the master door: find its gold key and go through. There is no way back.',
-      'From level 2 on, other doors are locked too. Their keys are hidden somewhere in the level.',
+      'Other doors may be locked too. Their keys are hidden somewhere in the level.',
       'Keys you hold are shown at the top left, next to a picture of the door they open.',
     ],
     draw(k) {
@@ -120,8 +132,8 @@ export const TUTORIAL = [
     text: [
       'Move the mouse, or drag a finger, to aim your flashlight. Anything you can use glows when you point at it. Click or tap to use it.',
       'To go back to the room you came from, click the arrow at the bottom or press SPACE.',
-      'A warm glow means there is still something to find. A dull blue glow means there is nothing left.',
-      'Press ESC or the pause button at the top right to pause.',
+      'A warm glow means there is still something to interact with. A dull blue glow means there is nothing left.',
+      'Press ESC or the pause button at the top right to pause the game.',
     ],
     draw(k) {
       const { c, P, hud } = k, h = 108, fy = room(k, h, 86), x1 = P.x + P.w * 0.3, x2 = P.x + P.w * 0.7;
@@ -146,8 +158,7 @@ export const TUTORIAL = [
   {
     title: 'PAINTINGS',
     text: [
-      'Click a painting to move it. It slips off its nail and swings, or now and then falls to the floor.',
-      'Sometimes something hangs on the wall behind it: a key or pills. Click it to take it.',
+      'Click a painting to move it and uncover what it hides behind it.'
     ],
     draw(k) {
       room(k);
@@ -166,7 +177,7 @@ export const TUTORIAL = [
     title: 'POSTERS',
     text: [
       'Posters have to be torn off the wall. Every click scratches a piece away.',
-      'A key or pills under a poster can be taken as soon as it is uncovered. Sometimes that is only with the last scratch.',
+      'Items under a poster can be taken as soon as it is uncovered, but the room won\'t appear completed until you scratch the entire poster.',
     ],
     draw(k) {
       const { c, P } = k, h = 96, sp = k.sprites.get('poster01');
@@ -205,7 +216,7 @@ export const TUTORIAL = [
     text: [
       'In some rooms your flashlight dies the moment you walk in.',
       "Search the walls for the light switch. You can't see it, but it glows when you point at it. Nothing else in the room can be used until the light is on.",
-      'Dark rooms can hide doors, keys and pills. Running from all of them can cost you the way out.',
+      'Dark rooms may contain important items or a passage to the master door. Running from all of them can cost you the way out.',
     ],
     draw(k) {
       const { c, P } = k, fy = room(k);
@@ -219,11 +230,27 @@ export const TUTORIAL = [
     },
   },
   {
+    title: 'LEVERS',
+    text: [
+      'A level may have a room with one door and a row of levers. All the levers start up.',
+      'The door only opens with the levers set the right way: some up, some down. Maybe all up, maybe all down.',
+      'Click a lever to flip it, then try the door. If it is wrong, every lever snaps back up.',
+      'Get it right and the door becomes accessible.',
+    ],
+    draw(k) {
+      // A door on the left, the levers set up, down, down, down, up; the pointer on the last (glowing) one.
+      const { c, P } = k, fy = room(k), ly = fy - 58, combo = [0, 1, 1, 1, 0], lx = (i) => P.x + 52 + i * 22;
+      sprite(k, 'door09', P.x + 21, fy - 36, 72);
+      combo.forEach((down, i) => lever(k, lx(i), ly, 20, down, i === 4 ? { glow: WARM, blur: 7 } : {}));
+      beam(k, lx(2), ly, 85, 0.12);
+      pointer(c, lx(4) + 2, ly + 3);
+    },
+  },
+  {
     title: 'GHOSTS',
     text: [
-      'From level 2 on, some doors lead to a pitch black room with a ghost in it. The ghost is always there: remember the door and stay away.',
-      'From level 3 on, a ghost can appear in any room. When your light dies and a face appears, get out: go back or through another door.',
-      "The light dies in dark rooms too, so at first you can't tell which it is.",
+      'Some doors lead to a pitch black room with a ghost in it. The ghost is always there: remember the door and stay away.',
+      'A ghost can appear in any room at any time. When your light dies and a face appears, get out: go back or through another door.'
     ],
     draw(k) {
       const { c, P } = k;
@@ -238,7 +265,7 @@ export const TUTORIAL = [
     text: [
       'Your heart is at the bottom left. It drains while a ghost is near, and it does not heal on its own. Listen to it beat.',
       'Pills you find are kept at the top right. Click them to take one and heal. Health and pills carry over to the next level.',
-      'If your heart stops, you start again from level 1.',
+      'If your heart stops, you are sent back to the main menu and start again from level 1.',
     ],
     draw(k) {
       const { c, P, hud } = k;

@@ -160,6 +160,9 @@ export const CONFIG = {
     screamerShort: { files: 'sfx/screamer_short' }, // jumpscare when the light comes on in a screamer room
     lightSwitch: { files: 'sfx/flashlight' },   // a dark room's light switch is turned on (same click as the flashlight)
     healed: { files: 'sfx/healed' },            // a pill is taken
+    lever: { files: 'sfx/lever0' },             // a lever is pulled up or down (lever01, lever02...; not lever_fail)
+    leverFail: { files: 'sfx/lever_fail' },     // lever door tried with the wrong combination: the levers snap up
+    leverSuccess: { files: 'sfx/lever_success' }, // lever door tried with the right combination: it opens
     uiSelect: { files: 'sfx/ui_select' },       // menu: pointing at an option (or arrow keys)
     uiSubmit: { files: 'sfx/ui_submit' },       // menu: clicking an option
   },
@@ -239,7 +242,23 @@ export const CONFIG = {
     screamerS: 1.1,       // ...and it stays on screen this long (no damage)
   },
 
-  // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the game restarts at level 1.
+  // Lever rooms (src/world.js + src/game.js, layout "levers" in data/rooms.json). One door and a row of levers
+  // (art: data/items.json "lever_base" + "lever_handle"), all starting up. The door only opens when the levers are
+  // set to its secret combination (random per level, any mix of up and down, even all up or all down). A wrong try
+  // plays lever_fail and every lever snaps back up; the right one plays lever_success and they stay where they are.
+  // Per-level lists: index 0 = level 1, the last value repeats.
+  levers: {
+    roomChance: [0, 0, 0.5, 0.5, 0.6], // chance a level has a lever room
+    masterChance: 0.35, // chance the master (gold) key is behind the lever door; otherwise nothing important is
+    count: 5,           // levers in the room (at most the lever slots of the "levers" layout)
+    pullS: 0.22,        // how long a lever takes to go up or down
+    resetDelayS: 0.3,   // after a wrong try, the levers wait this long before snapping back up...
+    resetS: 0.12,       // ...and snap up this fast
+    travel: 0.27,       // how far the handle sits from the middle of the base, up or down (share of the base height)
+    bulge: 0.15,        // the handle looks this much bigger halfway (pointing at you), 0 = a flat slide
+  },
+
+  // Health 0: a screamer image (data/ghosts.json) flashes while a screamer sound plays, then the main menu shows (START begins a new run at level 1).
   screamer: {
     holdS: 3.2,
     flashHz: 12,

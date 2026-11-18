@@ -1,5 +1,5 @@
 // Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, dark rooms
-// (light switch, ceiling light, screamer rooms), HUD state.
+// (light switch, ceiling light, screamer rooms), lever rooms, HUD state.
 // Produces a frame description for Renderer.
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
@@ -46,6 +46,9 @@ const TEXT = {
   masterTaken: ['You take the key. It is heavy, and gold.'],
   pillTaken: ['You take the pills.'],
   healed: ['You swallow a pill. You feel better.'],
+  leverWrong: ['Nothing happens. The levers snap back up.', 'The door does not budge. The levers spring back.'],
+  leverRight: ['Something clicks inside the door.', 'The levers lock in place. The door opens.'],
+  leversStuck: ["The levers won't move any more."],
   dark: ["It's too dark to see anything.", 'There must be a light switch somewhere.', 'You feel along the wall.'],
   level: (n) => `Level ${n}`,
 };
@@ -103,7 +106,7 @@ export class Game {
     this.onRoomChange = null; // (game) => void
     this.onWorldEnd = null;   // (game) => void   called after the "Level N" card: start the next level
     this.onSfx = null;        // (role, delay?) => void   role = key of CONFIG.sfx
-    this.onDeath = null;      // (game) => void   called after the screamer: restart
+    this.onDeath = null;      // (game) => void   called after the screamer: back to the main menu
     this.lastPointer = null;
     // Ghosts. health is hidden (only heard through the heartbeat) and carries over between levels.
     this.health = 1;
@@ -131,6 +134,8 @@ export class Game {
     this.visited = new Set();
     this.lingering = new Map(); // room -> { id, x, y, goneAt }: random ghosts you escaped, still there for a while
     this.lit = new Set();       // dark rooms whose light switch is on
+    this.leverPos = new Map();  // lever room -> [0 | 1 per lever] (0 = up, 1 = down), kept when you leave the room
+    this.leverHold = 0;         // seconds left before the levers snap back up after a wrong try
     this.ghost = null;
     this.msg = null;
     this.enterRoom(0);
@@ -169,6 +174,11 @@ export class Game {
         crack: 0,    // 0..1 cracks drawn on a fallen painting
       };
       if (it.pose?.kind === 'fall') it.crack = 1;
+      if (e.lever !== undefined) {
+        it.lever = e.lever; // index into leverPos
+        it.leverT = 0;      // shown position: 0 up .. 1 down (animates toward leverPos, see update)
+        it.leverFast = false;
+      }
       if (def.kind === 'poster') {
         it.rip = this.rips.get(it.uid) ?? null; // null until first scratched
         it.tear = it.rip ? tearOf(it.rip) : 0;  // shown tear threshold (animates toward tearOf)
@@ -184,6 +194,11 @@ export class Game {
       floor: this.assets.surfaces.get(spec.floor), floorTile: sf.floors[spec.floor]?.tile ?? 512,
     };
     this.room = { spec, template, bg: spec.kind === 'ghost' ? null : bg, items, loot };
+    // Lever room: levers start up the first time; afterwards they are where you left them.
+    const leverDoor = items.find((it) => it.e.levers);
+    if (leverDoor && !this.leverPos.has(i)) this.leverPos.set(i, leverDoor.e.levers.map(() => 0));
+    this.leverHold = 0;
+    for (const it of items) if (it.lever !== undefined) it.leverT = this.leverPos.get(i)[it.lever];
     this.room.sw = spec.dark ? this.makeSwitch(spec, items) : null;
     this.markExplored();
     this.hover = null;
@@ -461,6 +476,56 @@ export class Game {
     this.say(pickText(loot ? TEXT.lootFound : pose.kind === 'fall' ? TEXT.fell : TEXT.nothing));
   }
 
+  // True when the current room is a lever room whose door has been opened (its levers stay put from then on).
+  leversSolved() {
+    const d = this.room.items.find((it) => it.e.levers);
+    return !!d && this.unlocked.has(d.uid);
+  }
+
+  // Tap on a lever: it flips up or down. Once the door has been opened they are stuck.
+  pullLever(it) {
+    if (this.leverHold > 0) return;
+    if (this.leversSolved()) return void this.say(pickText(TEXT.leversStuck));
+    this.leverPos.get(this.roomIndex)[it.lever] ^= 1;
+    this.onSfx?.('lever');
+  }
+
+  // Tap on a lever door that is still shut: true (and it stays open from now on) when the levers match its
+  // combination. Otherwise the door jolts and, after a moment, every lever snaps back up.
+  tryLevers(door) {
+    const pos = this.leverPos.get(this.roomIndex);
+    if (door.e.levers.every((v, i) => v === pos[i])) {
+      this.unlocked.add(door.uid);
+      this.onSfx?.('leverSuccess');
+      this.say(pickText(TEXT.leverRight));
+      return true;
+    }
+    pos.fill(0);
+    this.leverHold = CONFIG.levers.resetDelayS;
+    for (const it of this.room.items) if (it.lever !== undefined) it.leverFast = true;
+    door.shake = 1;
+    this.onSfx?.('leverFail');
+    this.say(pickText(TEXT.leverWrong));
+    return false;
+  }
+
+  // The handle of lever `it`, as a room-item-like object for frame(): it turns over its axis from up to down, so it
+  // moves along the base's slot on a cosine and looks bigger halfway, where it points at you.
+  leverHandle(it) {
+    const hs = this.assets.sprites.get('lever_handle');
+    if (!hs) return null;
+    const C = CONFIG.levers, def = this.db.items.lever_handle ?? {}, b = it.sprite.box, hb = hs.box;
+    const th = Math.PI * it.leverT;
+    const bx = it.x0 + ((b[0] + b[2]) / 2) * it.s, by = it.y0 + ((b[1] + b[3]) / 2) * it.s;
+    const cx = bx, cy = by - C.travel * (b[3] - b[1]) * it.s * Math.cos(th);
+    const s = (def.scale ?? it.s) * (1 + C.bulge * Math.sin(th));
+    const x0 = cx - ((hb[0] + hb[2]) / 2) * s, y0 = cy - ((hb[1] + hb[3]) / 2) * s;
+    return {
+      sprite: hs, s, cx, cy, x0, y0, depth: def.depth ?? 4, glow: 0, shake: it.shake, clip: 2, explored: false,
+      rect: [x0 - hs.ox * s, y0 - hs.oy * s, hs.tw * s, hs.th * s],
+    };
+  }
+
   // Tap on an uncovered key or pills.
   takeLoot(loot) {
     const e = loot.painting.e;
@@ -507,8 +572,9 @@ export class Game {
     if (this.world.rooms[r].dark && !this.lit.has(r)) return false;
     return this.world.rooms[r].items.every((e, idx) => {
       const uid = `${r}:${idx}`;
+      if (e.lever !== undefined) return true; // the lever door says whether this room is done
       if (e.to === undefined) return this.searched.has(uid) && (!lootId(e) || this.taken.has(uid));
-      if (e.to === EXIT || (e.lock !== undefined && !this.unlocked.has(uid))) return false;
+      if (e.to === EXIT || ((e.lock !== undefined || e.levers) && !this.unlocked.has(uid))) return false;
       return this.isExplored(e.to);
     });
   }
@@ -516,10 +582,12 @@ export class Game {
   // Item.explored drives the dull glow. Only taps in this room can change it, so it is refreshed on entry and
   // after a painting is searched.
   markExplored() {
+    const leversDone = this.leversSolved();
     for (const it of this.room.items) {
       const e = it.e;
-      it.explored = e.to === undefined ? this.searched.has(it.uid)
-        : e.to !== EXIT && (e.lock === undefined || this.unlocked.has(it.uid)) && this.isExplored(e.to);
+      it.explored = e.lever !== undefined ? leversDone
+        : e.to === undefined ? this.searched.has(it.uid)
+        : e.to !== EXIT && ((e.lock === undefined && !e.levers) || this.unlocked.has(it.uid)) && this.isExplored(e.to);
     }
   }
 
@@ -568,9 +636,11 @@ export class Game {
     if (h.lightSwitch) return void this.turnOnLight();
     if (h.painting) return void this.takeLoot(h);
     const e = h.e;
+    if (h.lever !== undefined) return void this.pullLever(h);
     if (h.def.kind === 'poster') return void this.scratchPoster(h);
     if (e.to !== undefined) {
       // Door
+      if (e.levers && !this.unlocked.has(h.uid) && (this.leverHold > 0 || !this.tryLevers(h))) return;
       if (e.lock !== undefined && !this.unlocked.has(h.uid)) {
         if (!this.keys.includes(e.lock)) {
           h.shake = 1;
@@ -758,6 +828,22 @@ export class Game {
       }
     }
 
+    // Levers: each handle turns toward its position (after a wrong try: waits, then all snap up fast).
+    if (this.leverHold > 0) {
+      this.leverHold -= dt;
+      busy = true;
+    } else {
+      const pos = this.leverPos.get(this.roomIndex);
+      for (const it of this.room.items) {
+        if (it.lever === undefined) continue;
+        const target = pos[it.lever];
+        if (it.leverT === target) { it.leverFast = false; continue; }
+        const step = dt / (it.leverFast ? CONFIG.levers.resetS : CONFIG.levers.pullS);
+        it.leverT = target > it.leverT ? Math.min(target, it.leverT + step) : Math.max(target, it.leverT - step);
+        busy = true;
+      }
+    }
+
     // Posters: each scratch tears its piece off quickly. Once the loot is uncovered it can be hovered.
     for (const it of this.room.items) {
       if (!it.rip) continue;
@@ -870,7 +956,11 @@ export class Game {
       if (this.room.sw) items.push(draw(this.room.sw));
       // Loot hangs on the wall behind its painting, so it is drawn first.
       for (const l of this.room.loot) items.push(draw(l));
-      for (const it of this.room.items) items.push(draw(it));
+      for (const it of this.room.items) {
+        items.push(draw(it));
+        const handle = it.lever !== undefined && this.leverHandle(it); // on top of its base
+        if (handle) items.push(draw(handle));
+      }
     }
     const G = this.ghost;
     if (G && G.alpha > 0 && this.phase !== 'end') {

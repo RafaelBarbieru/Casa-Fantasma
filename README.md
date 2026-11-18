@@ -28,7 +28,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 The "Click to enter" screen also shows a warning about loud noises and flickering lights, and points to the Epilepsy mode option.
 
 After "Click to enter", the main menu appears over the dimmed first room (the ambience is already playing, and the flashlight follows the pointer behind the menu).
-- **START** begins level 1. **HOW TO PLAY** is a short tutorial (7 pages: the goal, controls, paintings, posters, dark rooms, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a ghost, the heart and pills). Text and pictures are in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
+- **START** begins level 1. **HOW TO PLAY** is a short tutorial (8 pages: the goal, controls, paintings, posters, dark rooms, levers, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a door with a row of levers, a ghost, the heart and pills). Text and pictures are in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `door09`, `lever_base`, `lever_handle`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
   - **Audio:** volume sliders for **Master** (everything), **Ambience** (the level loop and the random ambience sounds) and **SFX** (every other sound, including the menu's). Click or drag along a slider; it moves in 5% steps.
   - **Game → Epilepsy mode:** no flickering or flashing light. The flashlight and the ceiling lights fade instead of flickering, ghosts don't shimmer, screamers appear as a still image (no flashing or shaking), and the red screen edge and the heart don't throb with the heartbeat (the heart still jumps).
 - Settings are saved in the browser and remembered next time.
@@ -71,7 +71,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
 - **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
   - They are rare early on and get more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3 and 1.6 per level (level 6 and up).
-- At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), and the game starts over from level 1.
+- At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), and you are sent back to the main menu; START begins a new run from level 1.
 
 ### Dark rooms
 - Any room except the first one of a level can be **dark**, from level 1 on. Walking in feels exactly like a ghost room: the flashlight flickers and dies. You can't tell which it is until a ghost does (or doesn't) appear.
@@ -80,6 +80,23 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Dark rooms can have doors, keys and pills like any other room, so running away from every dark room can cost you the way out.
 - A ghost in a lit room puts the ceiling light out too.
 - **Screamer rooms.** A dark room with nothing to find (paintings with no key or pills behind them) is sometimes a screamer room instead: it is empty except for the switch, and a moment after the light comes on, a screamer (one of `art-src/screamerNN.png`) jumps out with a short scream (`sfx/screamer_short`). It doesn't hurt you. This gets more likely every level.
+
+### Lever rooms
+- From level 3, a level sometimes has a **lever room**: one door and a row of 5 levers (`art-src/lever_base.png` for the plate, `art-src/lever_handle.png` for the handle that moves). All levers start **up**.
+- The door opens only when the levers are set to its secret combination, for example up, down, down, down, up. It can be any mix, including all up (the door just opens) or all down. Click a lever to flip it (`sfx/lever01`, `sfx/lever02`...), then click the door to try.
+- Wrong: `sfx/lever_fail` plays, the door jolts, and a moment later every lever snaps back up. Right: `sfx/lever_success` plays as you go through, and the levers stay where they are for the rest of the level.
+- The lever door never needs a key and is never the master door. Behind it there are a few more rooms: sometimes the **gold key** is there, otherwise nothing important.
+- A lever room can also be dark, like any other room.
+- The debug panel shows the combination (`^` = up, `v` = down) next to the lever door.
+
+`src/config.js` → `levers`:
+- `roomChance`: per level, how likely the level has a lever room (0 on levels 1 and 2). The last value repeats.
+- `masterChance`: how likely the gold key is behind the lever door.
+- `count`: how many levers (at most the lever spots in the `levers` layout of `data/rooms.json`).
+- `pullS`: how long a lever takes to move. `resetDelayS`, `resetS`: after a wrong try, how long the levers wait before snapping up, and how fast they snap.
+- `travel`: how far up and down the handle sits from the middle of the plate. `bulge`: how much bigger the handle looks halfway (as it turns towards you).
+- The levers' size is `scale` of `lever_base` and `lever_handle` in `data/items.json` (keep them equal); their positions are the `lever-1`...`lever-5` spots of the `levers` layout.
+- Levels 1 and 2 keep exactly the same layouts as before for a given seed.
 
 `src/config.js`:
 - `ghost`:
@@ -197,6 +214,7 @@ To add a texture:
 - Wall items (paintings) are pushed up automatically if they would reach the floor.
 - `scale` (optional) shrinks or enlarges items in that spot.
 - `accepts` lists the kinds of items that can go there.
+- The `levers` layout is only used for lever rooms: one `door` spot and the `lever` spots, left to right.
 
 ### Items
 - Doors are items with `"placement": ["door"]` and go in `door` slots. Paintings use `"wall"`.
@@ -258,6 +276,9 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/screamer_long` | health reached 0 |
   | `sfx/screamer_short` | a screamer room's screamer jumps out |
   | `sfx/healed` | you take a pill |
+  | `sfx/lever0` | a lever is pulled up or down (`lever01`, `lever02`...; not `lever_fail`/`lever_success`) |
+  | `sfx/lever_fail` | a lever door is tried with the wrong combination |
+  | `sfx/lever_success` | a lever door is tried with the right combination |
   | `sfx/ui_select` | menu: pointing at an option (or moving with the arrow keys) |
   | `sfx/ui_submit` | menu: clicking an option |
 

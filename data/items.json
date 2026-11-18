@@ -36,5 +36,7 @@
   "master_key": { "src": "assets/master_key.webp", "scale": 0.9, "depth": 3, "placement": [] },
   "health":     { "src": "assets/health.webp", "scale": 0.45, "depth": 3, "placement": [] },
   "heart":      { "src": "assets/heart.webp", "scale": 1, "depth": 3, "placement": [] },
-  "light_switch": { "src": "assets/light_switch.webp", "scale": 2.5, "depth": 1, "placement": [] }
+  "light_switch": { "src": "assets/light_switch.webp", "scale": 2.5, "depth": 1, "placement": [] },
+  "lever_base":   { "src": "assets/lever_base.webp", "scale": 0.55, "depth": 1, "placement": ["lever"] },
+  "lever_handle": { "src": "assets/lever_handle.webp", "scale": 0.55, "depth": 4, "placement": [] }
 }

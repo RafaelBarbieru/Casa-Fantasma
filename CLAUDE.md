@@ -31,7 +31,7 @@ Do not add a 3D runtime unless the user explicitly asks for one.
   - It also writes `assets/audio/index.json` (all sound names, rewritten only on change), which the runtime uses to resolve prefixes.
   - Bitrates are in `RATES`: Opus 64k mono / 112k stereo, AAC 96k / 160k. Sample rate is 48 kHz.
 - `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred).
-  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), posterScratch, posterTear (last scratch), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken), uiSelect / uiSubmit (menu).
+  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), posterScratch, posterTear (last scratch), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken), lever (`sfx/lever0` prefix, so not lever_fail/success), leverFail, leverSuccess, uiSelect / uiSubmit (menu).
   - Mixer: every source -> 'sfx' or 'ambience' bus GainNode -> 'master' -> destination (`bus()` in audio.js; `playSfx(name, vol, delay, bus)`, the bed gain goes to 'ambience'). `setVolumes(settings)` sets gain = slider².
   - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
   - Level ambience: `CONFIG.ambience.loops` and `.random.pool` are name PREFIXES resolved via index.json (`ambienceLoops()` / `ambiencePool()` in ambience.js). `generateWorld` picks `world.ambience` from the loops (seeded, last, so layouts don't shift), excluding `avoidAmbience` = the previous level's loop (main.startLevel passes it). `src/ambience.js` `setLevelAmbience(world)` -> `audio.playLoop()`: ONE reused `<audio loop>` element -> MediaElementSource -> GainNode (fades; reuse keeps iOS unlocked). Requests before the gesture are queued and start in `unlockAudio()`.
@@ -42,7 +42,7 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 ```
 index.html          canvas, start overlay, rotate hint, debug CSS
 src/menu.js         menus: main (START / HOW TO PLAY / OPTIONS), pause (RESUME / OPTIONS / QUIT), Options (sliders, epilepsy toggle; BACK -> `from`), tutorial (main only; pages in src/tutorial.js), drawn into the HUD canvas with the pixel font (hud.sig 'menu…'); pointer + keyboard; shown after the start overlay, START -> levelStart, heartbeat, random ambience, enterRoom
-src/tutorial.js     TUTORIAL pages { title, text[], draw(k) }: pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip
+src/tutorial.js     TUTORIAL pages { title, text[], draw(k) }: pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip/lever
 src/settings.js     `settings` {master, ambience, sfx, epilepsy} + load/save (localStorage, guarded so Node imports work). game.js/hud.js read settings.epilepsy
 src/main.js         boot, on-demand rAF loop (wake()), resize, input wiring, world regeneration
 src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf caps)
@@ -57,8 +57,8 @@ src/world.js        generateWorld(seed, db, {ambience, maze}): pure, seeded lock
 src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
 src/debug.js        overlay (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot
-data/items.json     { id: { src, scale, depth, placement:[tags], kind? } }   tags: "door" | "wall" (paintings + posters); kind "poster" = tears
-data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery"
+data/items.json     { id: { src, scale, depth, placement:[tags], kind? } }   tags: "door" | "wall" (paintings + posters) | "lever" (lever base); kind "poster" = tears
+data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery" + "levers" (1 door + "lever" slots; lever rooms only)
 data/ghosts.json    { ghosts: { id: { src, scale } }, screamers: { id: { src } } }   ghosts load as sprites (same Map as items)
 data/surfaces.json  { walls: { id: { src, tile } }, floors: { id: { src, tile } } }   tile = scene px per repeat (floor: at the floor line)
 tools/serve.mjs     static dev server (--lan, --port=, --dir=). Without --dir, fs.watch re-runs audio.mjs/images.mjs on source changes (debounced)
@@ -105,6 +105,13 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Renderer: `frame.light.room = [x, y, reach, amount]` -> `uRoomLight`/`uRoomLightP` term added in `lightAt()`. Shadows come from the ceiling light when it's stronger than the flashlight.
 - `isExplored(dark room)` needs it lit. Debug panel lists dark rooms (`!` = screamer).
 
+## Lever rooms
+- world.js: from `CONFIG.levers.roomChance[level]` (0 for levels 1-2). Own rng `seed ^ 0x1e7e25` with a fixed draw count (roll, vault roll, combo bits), so levels without one are byte-identical to before (checked headless over 300 seeds). With one, the main rng shifts: grow(0) keeps one extra free door, then after the side regions a `kind: 'levers'` room (stage 0) is linked on a free stage-0 door; its single door `{ to, levers: [0|1...] }` leads to region `sideLocks + 1`. `leverVault` (masterChance) puts the master key there (then no side vault). Never EXIT, never `lock`.
+- Dressing: template "levers" fixed; door art from commonDoors; items `{ item: <'lever'-tagged art>, slot, lever: i }`.
+- game.js: `leverPos` (room -> 0/1 array, persists for the level), items get `it.lever/leverT/leverFast`. Tap lever -> `pullLever` (sfx lever; message once solved). Tap shut lever door -> `tryLevers`: match -> `unlocked` + leverSuccess (+ door sfx); else pos reset, `leverHold = resetDelayS` (blocks lever/door taps, then fast snap), door shake, leverFail. `isExplored`: lever items always true, the lever door counts like a locked door; lever items' `explored` = solved.
+- Draw: `leverHandle(it)` = pseudo item drawn right after its base: cosine travel along the slot (`travel` × base box height) + `bulge` scale. Handle sprite `lever_handle` (placement []).
+- Seed 1 level 3: lever room 7 (dark), combo `vvvv^`, door -> room 8.
+
 ## Paintings + loot
 - First tap on a painting -> `Game.movePainting`: it slips (pose 'tilt': hangs from the top nail opposite `side`, swings `side * tiltDeg`, slides down until the loot is uncovered) or falls (pose 'fall', `fallChance`, or when the tilt would reach the floor): lowest corner at floorLine + floorSink, cracks on impact. Math.random, not seeded.
 - Pose = `{ kind, side, px, py, dx, dy, ang, crack? }` (rotate around pivot, then shift; `toWorld`/`toLocal` in game.js). Kept in `game.poses` (uid -> pose) so re-entering shows it moved. `_maskAt` hit-tests through the pose.
@@ -125,7 +132,7 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Ghost draw: FS_ITEM `uFx = [selfLit, opacity, gain, additive]`; additive output alpha 0, so the opaque black PNG background is invisible.
 - Pills: `CONFIG.pills.perLevel` (expected count: floor + fractional chance) placed in world.js on keyless paintings (`item.pill`) with a SEPARATE rng (`seed ^ 0x50111e5`), after dressing, so pills never shift layouts. `game.pills` persists across levels (main resets it with health on death). HUD icon = `data/items.json` "health" sprite (placement [], so never placed) at `CONFIG.hud.pills`; `hit()` returns 'pill' (allowed while a ghost is present) -> `usePill()`: health += `pills.heal` (of full), cap 1, sfx `healed`. Debug P = +1 pill.
 - Health HUD: `hudState().health` (quantized, null when dead/end) + main adds `pulse` = `beatEnvelope()` (quantized; the loop stays busy while > 0, heartbeat calls wake() per beat). `Hud.health()`: red radial vignette below `heartbeat.start` + `data/items.json` "heart" sprite (bottom left, `CONFIG.healthHud`), lost rows drawn from a cached grey copy, beat = scale + 'lighter' flush. Beat timing: `heartbeat.thumps[role]` = [[offsetS, strength]] measured from the wavs.
-- health <= 0: `die()` -> phase 'dead', screamer image as `frame.overlay` (pHud quad, flashing/jitter), screamer sfx; after `screamer.holdS` `onDeath` -> main restarts level 1 (new seed, health 1). Health persists across levels.
+- health <= 0: `die()` -> phase 'dead', screamer image as `frame.overlay` (pHud quad, flashing/jitter), screamer sfx; after `screamer.holdS` `onDeath` -> main `toMainMenu()` (same as QUIT: new level-1 run behind the main menu, health 1, no pills). Health persists across levels.
 
 ## Next likely work
 - Developer tools: slot editor (drag slots on the room, write rooms.json) and an event/trigger editor. Keep `world.js` and the data formats editor-friendly.

@@ -3,7 +3,8 @@
 // world = {
 //   seed, level, ambience,
 //   rooms: [{                         rooms[0] is the start. The rooms form a tree: every room but the
-//     kind: 'doors' | 'paintings' | 'ghost',  start has exactly one way in (its parent), which is where "back" goes.
+//     kind: 'doors' | 'paintings' | 'ghost' | 'levers',  start has exactly one way in (its parent), which is where
+//                                     "back" goes. 'levers' = one door locked by a row of levers (see 6. below)
 //     ghost?: { id, x, y },           ghost rooms only: black room, always this ghost (data/ghosts.json id)
 //     dark?: { switchAt, screamer? }, dark room: no flashlight, nothing usable until its light switch is on.
 //                                     switchAt 0..1 picks the switch's spot among the free ones on the wall.
@@ -15,6 +16,9 @@
 //     items: [{ item, slot,           item = data/items.json id, slot = slot id in the template
 //               to?: index | EXIT,    doors only: target room (EXIT = the master door: next level)
 //               lock?: keyIndex,      doors only: locked until key `lock` is used on it
+//               levers?: [0|1, ...],  doors only: opens only with the levers of its room in this combination
+//                                     (index = lever, 0 = up, 1 = down; all levers start up)
+//               lever?: index,        lever rooms only: lever `index` of the row (left -> right)
 //               key?: keyIndex,       paintings only: a key is hidden behind it
 //               pill?: true }],       paintings only: a pill is hidden behind it (never with a key)
 //   }],
@@ -29,6 +33,9 @@
 //      behind one of the side doors; the other side regions are red herrings.
 //   4. Every door left over leads to a decoy painting room or, from level 2 (ghost.roomChance), a ghost room.
 //   5. Some rooms are dark (darkRooms.roomChance); a dark room with nothing to find may be a screamer room.
+//   6. From level 3 (levers.roomChance), maybe a lever room on an unused open-region door: one door, locked by a
+//      random combination of its levers, with a small region behind it that may (levers.masterChance) hold the
+//      master key. The lever door never needs a key. Rolled on its own random stream (leverRng).
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -37,16 +44,30 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
-export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, level = 1 } = {}) {
+export function generateWorld(seed, db, {
+  ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, levers = {}, level = 1,
+} = {}) {
   const rng = createRng(seed);
+  const perLevel = (arr) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
+  // Lever room: its own stream, always the same number of draws, so it never shifts anything else it doesn't add.
+  // A level without one (levels 1-2) gets exactly the layout it had before lever rooms existed.
+  const lrng = createRng((seed ^ 0x1e7e25) >>> 0);
+  const nLevers = levers.count ?? 5;
+  const leverRoll = lrng.next(), leverVaultRoll = lrng.next();
+  const combo = Array.from({ length: nLevers }, () => (lrng.next() < 0.5 ? 1 : 0));
+  const hasLevers = !!db.rooms.levers && Object.values(db.items).some((d) => (d.placement || []).includes('lever'))
+    && leverRoll < perLevel(levers.roomChance);
+  const leverVault = hasLevers && leverVaultRoll < (levers.masterChance ?? 0);
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
     sideLocks: [0, 1, 2, 3], masterBehindChance: 0.6, doorRoomChance: 0.45, ...maze,
   };
   const range = ([a, b]) => a + rng.int(b - a + 1);
   const sideLocks = m.sideLocks[Math.min(level, m.sideLocks.length) - 1] ?? 0;
-  const masterBehind = sideLocks > 0 && rng.next() < m.masterBehindChance;
+  const masterRoll = sideLocks > 0 && rng.next() < m.masterBehindChance;
+  const masterBehind = masterRoll && !leverVault; // the lever region is the vault instead
   const nLocks = 1 + sideLocks;
+  const leverStage = sideLocks + 1;
 
   // --- 1. graph
   const rooms = [];
@@ -60,6 +81,8 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
         r.doors.push({ to: null, lock: null });
         open.push({ room: id, door: i });
       }
+    } else if (kind === 'levers') {
+      r.doors.push({ to: null, lock: null, levers: combo }); // linked below, never left open
     } else if (kind === 'paintings') {
       const n = range(m.paintings);
       for (let i = 0; i < n; i++) r.paintings.push({ key: null });
@@ -95,7 +118,7 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
   };
 
   addRoom('doors', -1, 0);
-  grow(0, range(m.openRooms), sideLocks + (masterBehind ? 0 : 1), nLocks);
+  grow(0, range(m.openRooms), sideLocks + (masterBehind || leverVault ? 0 : 1), nLocks + (hasLevers ? 1 : 0));
 
   const keys = [];
   const lock = (k) => {
@@ -115,6 +138,14 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
     link(o, k === vault ? 'paintings' : randomKind(), k);
   }
   for (let k = 1; k <= sideLocks; k++) grow(k, range(m.sideRooms) - 1, 0, 0);
+  // Lever room (stage 0) on a free open-region door; its lever door leads to region `leverStage`.
+  if (hasLevers) {
+    const o = rng.pick(openIn(0));
+    take(o);
+    const lr = link(o, 'levers', 0);
+    link({ room: lr, door: 0 }, leverVault ? 'paintings' : randomKind(), leverStage);
+    grow(leverStage, range(m.sideRooms) - 1, 0, 0);
+  }
 
   // Hide keys: side keys in the open region, the master key in the open region or in the vault.
   const hide = (k, stage) => {
@@ -126,12 +157,11 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
     keys[k].at = at;
   };
   for (let k = 1; k <= sideLocks; k++) hide(k, 0);
-  hide(0, masterBehind ? vault : 0);
+  hide(0, leverVault ? leverStage : masterBehind ? vault : 0);
 
   // Leftover doors -> decoy painting rooms, or (from level 2) ghost-only rooms. They are dead ends, so they never
   // block the way. A level whose chance is > 0 gets at least one ghost room when it has a leftover door.
   const ghostIds = Object.keys(db.ghosts?.ghosts ?? {});
-  const perLevel = (arr) => (arr?.length ? arr[Math.min(level, arr.length) - 1] : 0);
   const ghostChance = ghostIds.length ? perLevel(ghost.roomChance) : 0;
   const leftovers = open.slice();
   const haunted = new Set();
@@ -148,6 +178,7 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
   const tagged = (tag) => Object.keys(db.items).filter((id) => (db.items[id].placement || []).includes(tag));
   const doorArt = rng.shuffle(tagged('door'));
   const paintArt = tagged('wall');
+  const leverArt = tagged('lever');
   // Reserve one unique door art per lock when there are enough doors to go around.
   const reserved = doorArt.length >= nLocks + m.startDoors ? doorArt.slice(0, nLocks) : [];
   const commonDoors = doorArt.slice(reserved.length);
@@ -162,9 +193,11 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
       out.push({ kind: 'ghost', parent: r.parent, stage: r.stage, template: null, wall: null, floor: null, items: [], ghost: g });
       continue;
     }
-    const tag = r.kind === 'doors' ? 'door' : 'wall';
-    const need = r.kind === 'doors' ? r.doors.length : r.paintings.length;
-    const templates = Object.keys(db.rooms).filter((id) => db.rooms[id].slots.filter((s) => fits(s, tag)).length >= need);
+    const tag = r.kind === 'paintings' ? 'wall' : 'door';
+    const need = r.kind === 'paintings' ? r.paintings.length : r.doors.length;
+    // Lever rooms always use the "levers" layout (its single door slot keeps it out of the other rooms).
+    const templates = r.kind === 'levers' ? ['levers']
+      : Object.keys(db.rooms).filter((id) => db.rooms[id].slots.filter((s) => fits(s, tag)).length >= need);
     if (!templates.length) throw new Error(`[world] no room template has ${need} "${tag}" slots`);
     const template = rng.pick(templates);
     const all = db.rooms[template].slots.filter((s) => fits(s, tag));
@@ -172,7 +205,13 @@ export function generateWorld(seed, db, { ambience = [], avoidAmbience = null, m
     const chosen = new Set(rng.shuffle(all).slice(0, need));
     const slots = all.filter((s) => chosen.has(s));
     let items;
-    if (r.kind === 'doors') {
+    if (r.kind === 'levers') {
+      // One lever per lever slot (up to levers.count); the combination covers exactly those.
+      const d = r.doors[0], art = rng.pick(leverArt);
+      const ls = db.rooms[template].slots.filter((s) => fits(s, 'lever')).slice(0, nLevers);
+      items = [{ item: rng.pick(commonDoors), slot: slots[0].id, to: d.to, levers: d.levers.slice(0, ls.length) }];
+      ls.forEach((s, i) => items.push({ item: art, slot: s.id, lever: i }));
+    } else if (r.kind === 'doors') {
       const used = new Set(r.doors.filter((d) => d.lock !== null && reserved[d.lock]).map((d) => reserved[d.lock]));
       const art = (d) => {
         if (d.lock !== null && reserved[d.lock]) return reserved[d.lock];

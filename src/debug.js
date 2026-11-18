@@ -71,6 +71,7 @@ export class Debug {
       let t = `  ${it.item} @ ${it.slot}`;
       if (it.to !== undefined) t += it.to < 0 ? ' -> EXIT' : ` -> room ${it.to}`;
       if (it.lock !== undefined) t += ` [lock ${it.lock}]`;
+      if (it.levers) t += ` [levers ${it.levers.map((v) => (v ? 'v' : '^')).join('')}]`;
       if (it.key !== undefined) t += ` {key ${it.key}}`;
       if (it.pill) t += ' {pill}';
       if (g.room.items.find((x) => x.e === it)?.explored) t += '  (explored)';
@@ -80,6 +81,7 @@ export class Debug {
     lines.push(
       `held [${g.keys.join(', ')}]  pills ${g.pills}  (level has ${w.rooms.reduce((n, r) => n + r.items.filter((it) => it.pill).length, 0)},` +
         ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
+      `lever room ${w.rooms.findIndex((r) => r.kind === 'levers')} (-1 = none)  levers now ${(g.leverPos.get(g.roomIndex) ?? []).map((v) => (v ? 'v' : '^')).join('') || '-'}`,
       `dark rooms ${w.rooms.flatMap((r, i) => (r.dark ? [i + (r.dark.screamer ? '!' : '')] : [])).join(', ') || '-'}  (! = screamer)`,
       `ambience ${w.ambience}`,
       `render ${this.fps} fps (on demand)`,

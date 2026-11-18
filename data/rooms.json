@@ -13,5 +13,15 @@
       { "id": "wall-3", "x": 1195, "y": 410, "accepts": ["wall"] },
       { "id": "wall-4", "x": 1660, "y": 460, "accepts": ["wall"] }
     ]
+  },
+  "levers": {
+    "slots": [
+      { "id": "door",    "x": 520,  "anchor": "floor", "accepts": ["door"] },
+      { "id": "lever-1", "x": 980,  "y": 560, "accepts": ["lever"] },
+      { "id": "lever-2", "x": 1140, "y": 560, "accepts": ["lever"] },
+      { "id": "lever-3", "x": 1300, "y": 560, "accepts": ["lever"] },
+      { "id": "lever-4", "x": 1460, "y": 560, "accepts": ["lever"] },
+      { "id": "lever-5", "x": 1620, "y": 560, "accepts": ["lever"] }
+    ]
   }
 }
