@@ -245,11 +245,8 @@ export class Game {
     if (linger && linger.goneAt <= now()) this.lingering.delete(i);
     if (spec.kind === 'ghost') this.summon(spec.ghost, false);
     else if (linger && linger.goneAt > now()) this.summon(linger, true);
-    // Random ghost: exponential waiting time, so it can come at any moment (from level ghost.randomPerMin > 0).
-    const perMin = this.lv(CONFIG.ghost.randomPerMin);
-    this.spawnAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' && perMin > 0
-      ? now() + (CONFIG.ghost.graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000
-      : null;
+    // Random ghost: it can come at any moment (from level ghost.randomPerMin > 0), likelier the longer you stay.
+    this.spawnAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' ? this.nextRandomGhost() : null;
     this.fake = null;
     this.fakeAt = !this.ghost && i !== 0 && spec.kind !== 'ghost' ? this.nextFalseAlarm(CONFIG.falseAlarm.graceS) : null;
     // Weather: gusts only where a window is still open; thunder anywhere.
@@ -292,6 +289,16 @@ export class Game {
   // A random ghost comes within ms, if one can come in this room at all (the ambience going silent may call it).
   hurryGhost(ms) {
     if (this.spawnAt !== null) this.spawnAt = Math.min(this.spawnAt, now() + ms);
+  }
+
+  // When a random ghost comes in a room entered now, or null. The rate starts at randomPerMin and rises by
+  // rampPerMin per minute after graceS (hazard r + k*t): solve r*t + k*t²/2 = E, E ~ Exp(1).
+  nextRandomGhost() {
+    const G = CONFIG.ghost, r = this.lv(G.randomPerMin), k = r > 0 ? this.lv(G.rampPerMin) : 0;
+    if (r <= 0) return null;
+    const E = -Math.log(1 - Math.random());
+    const min = k > 0 ? (Math.sqrt(r * r + 2 * k * E) - r) / k : E / r;
+    return now() + (G.graceS + min * 60) * 1000;
   }
 
   // When the next false alarm comes: exponential waiting time (CONFIG.falseAlarm.perMin), at least graceS from now.
@@ -654,12 +661,6 @@ export class Game {
     this.markExplored();
     if (pose.kind === 'fall') this.onSfx?.('fall', CONFIG.paintings.fallSfxDelayS);
     else this.onSfx?.('painting');
-    // Sometimes a face is waiting behind an empty painting: a quick screamer (no damage), like a screamer room's.
-    if (!loot && Math.random() < this.lv(CONFIG.paintings.screamerChance)) {
-      this.jump = { img: this.pickScreamer(), t: -CONFIG.paintings.screamerDelayS };
-      this.hover = null;
-      return;
-    }
     this.say(pickText(loot?.clue ? TEXT().clueFound : loot ? TEXT().lootFound : pose.kind === 'fall' ? TEXT().fell : TEXT().nothing));
   }
 

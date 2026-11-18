@@ -43,10 +43,6 @@ export const CONFIG = {
     crackPx: 5,         // crack line width, scene px (one PS1 pixel is 4)
     crackDarken: 0.85,  // 0..1 how dark the cracks are
     fallenGain: 0.8,    // a fallen painting is a bit darker
-    // Sometimes a face waits behind a painting that hides nothing: a quick screamer (sfx screamerShort, an image
-    // from data/ghosts.json "screamers"), no damage. Per level (index 0 = level 1, the last value repeats).
-    screamerChance: [0, 0, 0.04, 0.06, 0.08, 0.1, 0.12, 0.15, 0.18, 0.22], // none on levels 1-2
-    screamerDelayS: 0.25, // after the tap, before it jumps out (the painting is already moving)
   },
 
   // False alarms: the light flickers and dies exactly as when a ghost comes (same sound), stays dark a moment, then
@@ -207,6 +203,9 @@ export const CONFIG = {
                                                  // Levels with a chance > 0 get at least one when possible.
     randomPerMin: [0, 0, 1, 1.5, 2, 2.5, 3.2, 4, 5, 6], // random ghost appearances per minute spent in a room (not the
                                                  // first room of a level, not ghost rooms). 0 = never.
+    rampPerMin: [0, 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5], // the longer you stay in a room, the likelier a random ghost: its rate
+                                                 // (randomPerMin) rises by this much per minute spent there (after graceS).
+                                                 // Only where randomPerMin > 0. 0 = steady rate.
     graceS: 2,          // no random ghost in the first seconds after entering a room
     lingerS: [1.0, 2.0],    // after you escape a random ghost, it stays in that room this long (random in range)
     drainPerS: 0.12,    // health lost per second in a room with a ghost (0.12 = dead in ~8 s)

@@ -57,7 +57,7 @@ Levels 1-5 ease you in. Levels 6-10 get much harder: things go wrong more and mo
 - the maze grows from about 16 to about 30 rooms (more locked side doors, more rooms behind them, a lever room on every level 10);
 - random ghosts come more than twice as often (`ghost.randomPerMin`), ghost rooms are about 3 times as common, and a silence brings a ghost twice as often;
 - pills barely become more common (1.6 to 1.9 per level);
-- more dark rooms, screamer rooms, faces behind paintings, false alarms, long darks, storms, gusts and faces in the windows.
+- more dark rooms, screamer rooms, false alarms, long darks, storms, gusts and faces in the windows.
 
 To change one level, change its value in the list. Lists shorter than 10 repeat their last value; a single value (not a list) applies to every level.
 - Click a painting and it slips off one nail and swings, showing the wall behind it. Sometimes something hangs there (a key or pills): **click it to take it**. Now and then a painting falls to the floor instead and cracks, with a crash.
@@ -154,6 +154,7 @@ To change one level, change its value in the list. Lists shorter than 10 repeat 
 - `ghost`:
   - `roomChance`: per level, how likely a dead-end door leads to a ghost room.
   - `randomPerMin`: per level, how many random ghosts per minute spent in a room.
+  - `rampPerMin`: per level, how much that rate rises for every minute you stay in the same room, so lingering gets riskier (0 on levels 1-2, where random ghosts don't come).
   - `graceS`: no random ghost in the first seconds after entering a room.
   - `lingerS`: how long an escaped ghost stays.
   - `drainPerS`: how fast health drains with a ghost in the room.
@@ -174,7 +175,6 @@ To change one level, change its value in the list. Lists shorter than 10 repeat 
   - `fallS`, `bounce`, `fallDeg`: how fast it falls, how much it bounces, how crooked it lands.
   - `fallSfxDelayS`: delay of the fall sound. 0 = when you click; set it to the same value as `fallS` to play it exactly when the painting hits the floor.
   - `crackPx`, `crackDarken`, `fallenGain`: crack thickness and darkness, and how much darker a fallen painting is.
-  - `screamerChance`: per level, how likely a painting with nothing behind it hides a face (0.05 = 5%; 0 on levels 1 and 2). `screamerDelayS`: how long after the click it jumps out.
 - `falseAlarm`:
   - `perMin`: per level, how many false alarms per minute spent in a room (0 = never; level 1 has none).
   - `graceS`: none in the first seconds after entering a room or after another false alarm.
@@ -198,7 +198,7 @@ To change one level, change its value in the list. Lists shorter than 10 repeat 
   - `switchMargin`: the minimum gap between the switch and doors or paintings.
   - `onS`: how long the ceiling light flickers before it's fully on.
   - `light`: the ceiling light. `x`, `y` = where it's brightest; `reach` = how far it spreads; `ambient` = brightness far from it; `peak` = brightness under it; `stretch` above 1 makes it fade faster towards the floor than to the sides.
-  - `screamerDelayS`, `screamerS`: how long after the light comes on the screamer appears, and how long it stays (also for the faces behind paintings).
+  - `screamerDelayS`, `screamerS`: how long after the light comes on the screamer appears, and how long it stays.
   - The switch's size is `scale` of `light_switch` in `data/items.json`.
   - Changing these never changes the rest of a seed's layout.
 - Add `?level=3` to the address to start at level 3 (for testing). With the debug panel open, **L** skips to the next level.
@@ -333,7 +333,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
   | `sfx/heartbeat_fast` | heartbeat, health below 50% |
   | `sfx/screamer_long` | health reached 0 |
-  | `sfx/screamer_short` | a screamer room's screamer jumps out, or a face behind a painting |
+  | `sfx/screamer_short` | a screamer room's screamer jumps out |
   | `sfx/door_wait` | the long dark between two rooms (optional: no files = silent) |
   | `sfx/healed` | you take a pill |
   | `sfx/lever0` | a lever is pulled up or down (`lever01`, `lever02`...; not `lever_fail`/`lever_success`) |
