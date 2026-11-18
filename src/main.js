@@ -6,15 +6,20 @@ import { attachInput } from './input.js';
 import { Game } from './game.js';
 import { Debug } from './debug.js';
 import { Hud } from './hud.js';
-import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex } from './audio.js';
+import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex, setVolumes } from './audio.js';
 import { initSfx, playRole } from './sfx.js';
 import { startHeartbeat, beatEnvelope } from './heartbeat.js';
 import { CONFIG } from './config.js';
 import { setLevelAmbience, startRandomAmbience, playRandomAmbience, ambienceLoops, ambiencePool } from './ambience.js';
+import { Menu } from './menu.js';
+import { settings, loadSettings } from './settings.js';
 
 const canvas = document.getElementById('c');
 const overlay = document.getElementById('overlay');
 const status = document.getElementById('status');
+
+loadSettings();
+setVolumes(settings);
 
 async function boot() {
   const renderer = Renderer.create(canvas);
@@ -37,20 +42,22 @@ async function boot() {
     ambience: ambienceLoops(), avoidAmbience, maze: CONFIG.maze, ghost: CONFIG.ghost, pills: CONFIG.pills, dark: CONFIG.darkRooms, level,
   });
   // A level is a whole new world: the previous one (its rooms and any keys) is gone, so there is no way back.
-  const startLevel = (seed, level) => {
+  // sound: false when the main menu is shown next (its START plays it).
+  const startLevel = (seed, level, sound = true) => {
     game.setWorld(newWorld(seed, level, game.world?.ambience));
     setLevelAmbience(game.world);
-    if (audioUnlocked()) playRole('levelStart'); // the first level's sound plays on the start-overlay tap
+    if (sound && audioUnlocked()) playRole('levelStart');
     console.info('[casa] level', level, 'seed', game.world.seed, game.world);
     wake();
   };
   game.onWorldEnd = () => startLevel((game.world.seed + 1) >>> 0, game.world.level + 1);
-  // Health 0 -> screamer -> start over from level 1 with a new maze, full health and no pills.
-  game.onDeath = () => {
+  // A new run: level 1 with a new maze, full health and no pills (after death, or QUIT in the pause menu).
+  const newRun = (sound) => {
     game.health = 1;
     game.pills = 0;
-    startLevel((Math.random() * 2 ** 32) >>> 0, 1);
+    startLevel((Math.random() * 2 ** 32) >>> 0, 1, sound);
   };
+  game.onDeath = () => newRun(true); // health 0 -> screamer -> start over
   game.onSfx = (role, delay) => playRole(role, delay);
   const debug = new Debug({
     game, renderer, playRandomAmbience,
@@ -58,6 +65,55 @@ async function boot() {
     nextLevel: () => game.onWorldEnd(),
   });
   game.onRoomChange = () => debug.refresh();
+
+  // Menus. Main: after the start overlay, over the dimmed start room (the game runs behind it: the flashlight follows
+  // the pointer, nothing in the room reacts). START begins the first level. Pause: Esc or the HUD pause button once
+  // the game has started; the game is frozen (no update) until RESUME.
+  let started = false, heartbeat = false, pausedAt = 0;
+  const backToGame = () => {
+    hud.sig = ''; // the menu drew into the HUD canvas: force the game HUD to redraw
+    if (menuPointer) game.pointerMove(menuPointer.p, menuPointer.k); // so hover works without moving first
+    wake();
+  };
+  const menu = new Menu({
+    w: hud.w, h: hud.h,
+    art: { wall: assets.surfaces.get('wall02'), floor: assets.surfaces.get('floor01') }, // tutorial pictures
+    onSfx: (role) => playRole(role),
+    onChange: () => { setVolumes(settings); wake(); },
+    onStart: () => {
+      started = true;
+      playRole('levelStart');
+      if (!heartbeat) startHeartbeat(() => (menu.open || game.phase === 'dead' || game.phase === 'end' ? null : game.health), wake);
+      heartbeat = true;
+      startRandomAmbience();
+      game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking
+      backToGame();
+    },
+    onResume: () => {
+      game.shiftClock(performance.now() - pausedAt);
+      backToGame();
+    },
+    onQuit: () => {
+      started = false;
+      newRun(false);
+      menu.show('main');
+    },
+  });
+  const pause = (sound) => {
+    if (!started || menu.open || game.phase === 'dead') return;
+    pausedAt = performance.now();
+    game.hover = null;
+    pauseHover = false;
+    menu.show('pause');
+    if (sound) playRole('uiSubmit');
+    wake();
+  };
+  // The tab going to the background pauses too (the loop stops there, but the ghost timers run on the wall clock).
+  document.addEventListener('visibilitychange', () => document.hidden && pause(false));
+  let menuPointer = null, pauseHover = false;
+  const aim = (p, k) => { if (!started) { game.light.tx = p.x; game.light.ty = p.y; } menuPointer = { p, k }; };
+  const pb = CONFIG.hud.pause;
+  const onPause = (p) => Math.abs(p.x - pb.x) <= pb.w / 2 && Math.abs(p.y - pb.y) <= pb.h / 2;
   if (new URLSearchParams(location.search).has('debug')) window.casa = { game, renderer, assets, db }; // console access
   game.setWorld(newWorld(seedFromUrl(), levelFromUrl()));
   setLevelAmbience(game.world); // queued; starts on the start-overlay gesture
@@ -70,10 +126,12 @@ async function boot() {
     const dt = last ? Math.min(0.05, (t - last) / 1000) : 1 / 60;
     last = t;
     const pulse = Math.round(beatEnvelope(performance.now()) * 20) / 20; // HUD heart thump
-    const busy = game.update(dt) || pulse > 0;
+    const paused = started && menu.open;
+    const busy = !paused && (game.update(dt) || pulse > 0);
     const draw = busy || dirty;
     if (draw) {
-      hud.update({ ...game.hudState(), pulse });
+      if (menu.open) menu.draw(hud);
+      else hud.update({ ...game.hudState(), pulse, pause: game.phase === 'dead' ? null : { hover: pauseHover } });
       renderer.draw(game.frame(), hud);
     }
     dirty = false;
@@ -104,6 +162,12 @@ async function boot() {
   new ResizeObserver(onResize).observe(canvas);
   renderer.onRestore = wake;
   addEventListener('keydown', (e) => {
+    if (menu.open) {
+      if (menu.key(e)) e.preventDefault();
+      wake();
+      return;
+    }
+    if (e.code === 'Escape' && !e.repeat) pause(true);
     // Space = back arrow (keyboard players). Only once the start overlay is gone; ignore auto-repeat.
     if (e.code === 'Space') {
       e.preventDefault(); // no page scroll / button activation
@@ -114,10 +178,21 @@ async function boot() {
   onResize();
 
   attachInput(canvas, (x, y) => renderer.cssToScene(x, y), {
-    move: (p, k) => { game.pointerMove(p, k); wake(); },
-    down: (p, k) => { game.pointerDown(p, k); wake(); },
-    tap: (p, k) => { game.tap(p, k); wake(); },
-    leave: () => { game.pointerLeave(); wake(); },
+    move: (p, k) => {
+      if (menu.open) { menu.move(p, k); aim(p, k); } else {
+        pauseHover = k !== 'touch' && onPause(p);
+        game.pointerMove(p, k);
+      }
+      wake();
+    },
+    down: (p, k) => { if (menu.open) { menu.down(p, k); aim(p, k); } else game.pointerDown(p, k); wake(); },
+    up: () => { if (menu.open) { menu.up(); wake(); } },
+    tap: (p, k) => {
+      if (menu.open) menu.tap(p, k);
+      else if (onPause(p)) { menuPointer = { p, k }; pause(true); } else game.tap(p, k);
+      wake();
+    },
+    leave: () => { if (menu.open) menu.select(null); else { pauseHover = false; game.pointerLeave(); } wake(); },
   });
 
   // Click/tap to start: gives us a user gesture (needed later for audio + fullscreen on mobile).
@@ -125,12 +200,9 @@ async function boot() {
   overlay.classList.add('ready');
   overlay.addEventListener('pointerdown', () => {
     overlay.classList.add('hidden');
-    unlockAudio();
-    playRole('levelStart');
-    startHeartbeat(() => (game.phase === 'dead' || game.phase === 'end' ? null : game.health), wake);
-    startRandomAmbience();
+    unlockAudio(); // the level's ambience starts here, under the menu
     if (matchMedia('(pointer: coarse)').matches) document.documentElement.requestFullscreen?.().catch(() => {});
-    game.enterRoom(game.roomIndex); // restart flicker-in now that the player is looking
+    menu.show();
     wake();
   }, { once: true });
 }

@@ -2,6 +2,7 @@
 // nearest filtering. Text uses a built-in 5x7 pixel font (uppercase only), so no font files are needed.
 // `version` bumps whenever the canvas changes, so the renderer only re-uploads the texture then.
 import { CONFIG } from './config.js';
+import { settings } from './settings.js';
 
 // 5x7 glyphs, rows top -> bottom, '1' = ink.
 const GLYPHS = {
@@ -27,11 +28,13 @@ const GLYPHS = {
   "'": '00100 00100 01000 00000 00000 00000 00000', '!': '00100 00100 00100 00100 00100 00000 00100',
   '?': '01110 10001 00001 00010 00100 00000 00100', '-': '00000 00000 00000 11111 00000 00000 00000',
   ':': '00000 01100 01100 00000 01100 01100 00000', '/': '00001 00001 00010 00100 01000 10000 10000',
+  '%': '11001 11010 00010 00100 01000 01011 10011', '<': '00010 00100 01000 10000 01000 00100 00010',
+  '>': '01000 00100 00010 00001 00010 00100 01000',
 };
 const FONT = Object.fromEntries(Object.entries(GLYPHS).map(([c, s]) => [c, s.split(' ')]));
 const ADV = 6, LINE = 9;
 
-const KEY_ICON = ['01110000', '10001111', '10001011', '01110000'];
+export const KEY_ICON = ['01110000', '10001111', '10001011', '01110000'];
 
 export function textWidth(s, scale = 1) {
   return Math.max(0, s.length * ADV - 1) * scale;
@@ -54,11 +57,11 @@ export class Hud {
   sx(x) { return Math.round((x * this.w) / CONFIG.sceneW); }
   sy(y) { return Math.round((y * this.h) / CONFIG.sceneH); }
 
-  text(s, x, y, color, scale = 1) {
+  text(s, x, y, color, scale = 1, shadow = '#000') {
     const c = this.ctx;
     s = s.toUpperCase();
     for (const pass of [0, 1]) {
-      c.fillStyle = pass ? color : '#000';
+      c.fillStyle = pass ? color : shadow;
       const o = pass ? 0 : scale; // 1-px drop shadow keeps text readable on lit areas
       for (let i = 0; i < s.length; i++) {
         const g = FONT[s[i]];
@@ -86,11 +89,11 @@ export class Hud {
   }
 
   // state = { message, chars, keys:[{ door: doorArtId, master }], back, backHover, pills: count, pillHover, title,
-  //           health: 0..1 | null (hidden), pulse: 0..1 heartbeat thump }
+  //           level: number | null (hidden), pause: { hover } | null (hidden), health: 0..1 | null (hidden), pulse: 0..1 heartbeat thump }
   // Redraws only when something visible changed (callers quantize health/pulse so that is not every frame).
   update(st) {
     const sig = JSON.stringify([st.message, st.chars, st.keys, st.back, st.backHover, st.pills, st.pillHover, st.title,
-      st.health, st.pulse]);
+      st.level, st.pause, st.health, st.pulse, settings.epilepsy]);
     if (sig === this.sig) return;
     this.sig = sig;
     this.version++;
@@ -113,6 +116,25 @@ export class Hud {
         c.drawImage(sp.canvas, sp.ox, sp.oy, sp.w, sp.h, x + 10, 8, tw, th);
         x += 10 + tw + 10;
       } else x += 20;
+    }
+
+    // Current level (top centre).
+    if (st.level) {
+      const s = 'LEVEL ' + st.level, lw = textWidth(s), p = CONFIG.hud.level;
+      const x0 = this.sx(p.x) - (lw >> 1), y0 = this.sy(p.y) - 3;
+      c.fillStyle = 'rgba(0,0,0,0.55)';
+      c.fillRect(x0 - 4, y0 - 3, lw + 8, 13);
+      this.text(s, x0, y0, '#8f8571');
+    }
+
+    // Pause button (top right corner): two bars.
+    if (st.pause) {
+      const p = CONFIG.hud.pause, cx = this.sx(p.x), cy = this.sy(p.y);
+      c.fillStyle = 'rgba(0,0,0,0.55)';
+      c.fillRect(cx - 7, cy - 7, 14, 14);
+      c.fillStyle = st.pause.hover ? '#e8dcc0' : '#6d6455';
+      c.fillRect(cx - 4, cy - 4, 3, 9);
+      c.fillRect(cx + 2, cy - 4, 3, 9);
     }
 
     // Pills held (top right): the pill art + count. Tapping it takes one (Game.hit -> 'pill').
@@ -166,7 +188,8 @@ export class Hud {
   health(h, pulse) {
     const c = this.ctx, W = this.w, H = this.h, cfg = CONFIG.healthHud;
     const low = Math.max(0, Math.min(1, 1 - h / CONFIG.heartbeat.start)); // 0 at the heartbeat's start -> 1 at death
-    const a = low * (cfg.vignette + cfg.vignetteBeat * pulse);
+    const throb = settings.epilepsy ? 0 : pulse; // epilepsy mode: no red throb and no blood flush (the heart still jumps)
+    const a = low * (cfg.vignette + cfg.vignetteBeat * throb);
     if (a > 0.004) {
       const d = Math.hypot(W, H) / 2;
       const g = c.createRadialGradient(W / 2, H / 2, d * (0.75 - 0.3 * low), W / 2, H / 2, d);
@@ -189,10 +212,10 @@ export class Hud {
     if (cut < dh) {
       const sy0 = src(cut), sxx = sp.ox + bx0;
       c.drawImage(sp.canvas, sxx, sy0, bw, sp.oy + by1 - sy0, x0, y0 + cut, dw, dh - cut);
-      if (pulse > 0) {
+      if (throb > 0) {
         // Flush of blood on each thump.
         c.globalCompositeOperation = 'lighter';
-        c.globalAlpha = 0.45 * pulse;
+        c.globalAlpha = 0.45 * throb;
         c.drawImage(sp.canvas, sxx, sy0, bw, sp.oy + by1 - sy0, x0, y0 + cut, dw, dh - cut);
         c.globalAlpha = 1;
         c.globalCompositeOperation = 'source-over';

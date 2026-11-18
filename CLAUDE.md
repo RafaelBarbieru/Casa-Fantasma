@@ -27,11 +27,12 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 ## Audio pipeline
 - Masters are `audio-src/**/*.wav|ogg|mp3|flac` (the user delivers .ogg sfx), tracked with LFS and never shipped.
 - `tools/audio.mjs` (runs from the predev, predev:lan and prebuild hooks) uses ffmpeg to write `assets/audio/**/<name>.ogg` (Opus) and `<name>.m4a` (AAC).
-  - It is incremental (by mtime), deletes orphaned outputs, and preserves the channel count (mono or stereo, >2 downmixed).
+  - It is incremental (by mtime), deletes orphaned outputs, and preserves the channel count (mono or stereo, >2 downmixed), except `MONO` names (`ui_*`), always mono.
   - It also writes `assets/audio/index.json` (all sound names, rewritten only on change), which the runtime uses to resolve prefixes.
   - Bitrates are in `RATES`: Opus 64k mono / 112k stereo, AAC 96k / 160k. Sample rate is 48 kHz.
 - `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred).
-  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), posterScratch, posterTear (last scratch), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken).
+  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), posterScratch, posterTear (last scratch), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken), uiSelect / uiSubmit (menu).
+  - Mixer: every source -> 'sfx' or 'ambience' bus GainNode -> 'master' -> destination (`bus()` in audio.js; `playSfx(name, vol, delay, bus)`, the bed gain goes to 'ambience'). `setVolumes(settings)` sets gain = slider².
   - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
   - Level ambience: `CONFIG.ambience.loops` and `.random.pool` are name PREFIXES resolved via index.json (`ambienceLoops()` / `ambiencePool()` in ambience.js). `generateWorld` picks `world.ambience` from the loops (seeded, last, so layouts don't shift), excluding `avoidAmbience` = the previous level's loop (main.startLevel passes it). `src/ambience.js` `setLevelAmbience(world)` -> `audio.playLoop()`: ONE reused `<audio loop>` element -> MediaElementSource -> GainNode (fades; reuse keeps iOS unlocked). Requests before the gesture are queued and start in `unlockAudio()`.
   - Random one-shots: `CONFIG.ambience.random` (pool, gapS, firstDelayS, chance, volume), decoded with the SFX at boot, setTimeout chain, Math.random (not seeded), no immediate repeats, skipped while hidden. The tab going hidden suspends the context and pauses the bed.
@@ -40,6 +41,9 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 ## Layout
 ```
 index.html          canvas, start overlay, rotate hint, debug CSS
+src/menu.js         menus: main (START / HOW TO PLAY / OPTIONS), pause (RESUME / OPTIONS / QUIT), Options (sliders, epilepsy toggle; BACK -> `from`), tutorial (main only; pages in src/tutorial.js), drawn into the HUD canvas with the pixel font (hud.sig 'menu…'); pointer + keyboard; shown after the start overlay, START -> levelStart, heartbeat, random ambience, enterRoom
+src/tutorial.js     TUTORIAL pages { title, text[], draw(k) }: pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip
+src/settings.js     `settings` {master, ambience, sfx, epilepsy} + load/save (localStorage, guarded so Node imports work). game.js/hud.js read settings.epilepsy
 src/main.js         boot, on-demand rAF loop (wake()), resize, input wiring, world regeneration
 src/config.js       ALL tunables (flashlight, shadow, glow, transitions, perf caps)
 src/renderer.js     WebGL1: 2 programs (bg, item), 1 unit quad VBO, texture cache (WeakMap by source), letterbox view, context-loss restore
@@ -48,7 +52,7 @@ src/game.js         state: room, inventory (keys/unlocked/searched/lit), light +
 src/heartbeat.js    health heartbeat: setTimeout chain (independent of the sleeping rAF loop), gap from CONFIG.heartbeat; beatEnvelope(now) -> 0..1 for the HUD heart
 src/sfx.js          sound roles: CONFIG.sfx prefix -> random pool from assets/audio/index.json, preload modes, playRole()
 src/hud.js          HUD 2D canvas at the PS1 framebuffer size: built-in 5x7 pixel font, typewriter message box, key icons + door thumbnails, back chevron. `version` bumps on change
-src/input.js        Pointer Events -> move/down/tap/leave in scene coords. Touch moves the light only while the finger is down
+src/input.js        Pointer Events -> move/down/up/tap/leave in scene coords. Touch moves the light only while the finger is down
 src/world.js        generateWorld(seed, db, {ambience, maze}): pure, seeded lock-and-key maze (format documented at the top). Reusable by a future editor
 src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
@@ -87,6 +91,13 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Headless check: import world.js + game.js in Node with stub sprites (full masks), tap item centres, step update(0.05). Game has no DOM deps.
 - `?debug` exposes `window.casa = { game, renderer, assets, db }` for console poking (e.g. `casa.game.die()`).
 - In an occluded/automated Chrome tab rAF runs ~2 fps and dt is capped at 0.05, so transitions take ~10x longer there.
+
+## Menu + epilepsy mode
+- index.html overlay: "Click to enter" + loud-noise/epilepsy warning (#warning).
+- Overlay tap -> unlockAudio (ambience bed starts) + `menu.show()`. While `menu.open`, main routes input/keys to the menu and draws `menu.draw(hud)` instead of `hud.update`; leaving resets `hud.sig`. Before START (`started` false) the game keeps updating and the light follows the pointer (`aim`).
+- Pause (`started && menu.open`): Esc, the HUD pause button (`CONFIG.hud.pause`, hit-tested in main.js, not game.js; hover via `hudState + pause`), or the tab going hidden. game.update is skipped; RESUME calls `game.shiftClock(pausedMs)` (spawnAt + lingering goneAt are wall-clock). Heartbeat's getHealth returns null while a menu is open. QUIT -> `newRun(false)` (no levelStart sound) + main menu.
+- `settings.epilepsy`: `flickerIn` -> plain ramp, `dying` -> linear fade, `screamerOverlay` -> steady slow zoom, ghost `fx` opacity steady, HUD vignette throb + heart flush off. Any new flicker must check it.
+- HUD level label: `hudState().level` (null in 'end'/'dead'), at `CONFIG.hud.level`.
 
 ## Dark rooms
 - world.js: `room.dark = { switchAt, screamer? }` from `CONFIG.darkRooms` on its own rng (`seed ^ 0xda4c0de`, 3 draws per room), after pills, so layouts never shift. Any room but 0 and ghost rooms. Screamer = dark painting room with no key/pill -> `items: []`.

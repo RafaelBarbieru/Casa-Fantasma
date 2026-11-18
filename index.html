@@ -16,12 +16,18 @@
   }
   #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   #overlay {
-    position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7vh;
     background: #000; transition: opacity .8s; letter-spacing: .25em; text-transform: uppercase; font-size: 14px;
   }
   #overlay.ready { cursor: pointer; }
   #overlay.ready #status { animation: blink 1.1s steps(1) infinite; }
   #overlay.hidden { opacity: 0; pointer-events: none; }
+  #warning {
+    max-width: min(560px, calc(100vw - 32px)); padding: 0 16px; box-sizing: border-box; text-align: center;
+    font-size: 11px; line-height: 1.6; letter-spacing: .12em; color: #7d7462;
+  }
+  #warning h2 { margin: 0 0 .6em; font-size: 12px; letter-spacing: .3em; color: #b0301f; }
+  #warning p { margin: 0 0 .6em; }
   @keyframes blink { 60% { opacity: 0; } }
   #rotate {
     display: none; position: absolute; left: 0; right: 0; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 2;
@@ -42,7 +48,14 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="overlay"><div id="status">Loading</div></div>
+<div id="overlay">
+  <div id="status">Loading</div>
+  <div id="warning">
+    <h2>Warning</h2>
+    <p>This game contains loud noises, sudden screams and flickering, flashing lights, which may trigger seizures in people with photosensitive epilepsy.</p>
+    <p>Flickering lights can be turned off in Options &gt; Game &gt; Epilepsy mode.</p>
+  </div>
+</div>
 <div id="rotate">Rotate your device</div>
 <script type="module" src="src/main.js"></script>
 </body>

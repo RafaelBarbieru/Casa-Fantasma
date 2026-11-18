@@ -134,7 +134,9 @@ export const CONFIG = {
     textCps: 45,        // typewriter speed, characters per second
     messageS: 3.2,      // how long a message stays after it is fully typed
     back: { x: 960, y: 1015, w: 220, h: 100 }, // "go back" arrow hotspot, scene px
-    pills: { x: 1800, y: 75, w: 240, h: 130 },  // pill icon + count (top right) and its tap hotspot, scene px
+    pills: { x: 1720, y: 75, w: 200, h: 130 },  // pill icon + count (top right) and its tap hotspot, scene px
+    pause: { x: 1872, y: 48, w: 96, h: 96 },    // pause button (top right corner) and its tap hotspot, scene px
+    level: { x: 960, y: 40 },                   // "LEVEL N" label (centre), scene px
   },
 
   // Sound effects: role -> every sound whose name (path in audio-src/, no extension) starts with `files`.
@@ -158,6 +160,8 @@ export const CONFIG = {
     screamerShort: { files: 'sfx/screamer_short' }, // jumpscare when the light comes on in a screamer room
     lightSwitch: { files: 'sfx/flashlight' },   // a dark room's light switch is turned on (same click as the flashlight)
     healed: { files: 'sfx/healed' },            // a pill is taken
+    uiSelect: { files: 'sfx/ui_select' },       // menu: pointing at an option (or arrow keys)
+    uiSubmit: { files: 'sfx/ui_submit' },       // menu: clicking an option
   },
 
   // Ghosts (data/ghosts.json). Per-level lists: index 0 = level 1, the last value repeats.

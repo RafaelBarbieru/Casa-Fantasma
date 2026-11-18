@@ -24,7 +24,21 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
 
+## Main menu and options
+The "Click to enter" screen also shows a warning about loud noises and flickering lights, and points to the Epilepsy mode option.
+
+After "Click to enter", the main menu appears over the dimmed first room (the ambience is already playing, and the flashlight follows the pointer behind the menu).
+- **START** begins level 1. **HOW TO PLAY** is a short tutorial (7 pages: the goal, controls, paintings, posters, dark rooms, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a ghost, the heart and pills). Text and pictures are in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
+  - **Audio:** volume sliders for **Master** (everything), **Ambience** (the level loop and the random ambience sounds) and **SFX** (every other sound, including the menu's). Click or drag along a slider; it moves in 5% steps.
+  - **Game → Epilepsy mode:** no flickering or flashing light. The flashlight and the ceiling lights fade instead of flickering, ghosts don't shimmer, screamers appear as a still image (no flashing or shaking), and the red screen edge and the heart don't throb with the heartbeat (the heart still jumps).
+- Settings are saved in the browser and remembered next time.
+- Keyboard: arrow keys (or WASD) move and change values (and turn the tutorial's pages), **Enter** or **Space** clicks, **Escape** goes back.
+- **Pause menu:** press **Escape** or click the pause button at the top right during the game (switching to another tab or app also pauses). It has **RESUME**, **OPTIONS** and **QUIT** (back to the main menu; the run is lost and the next START is a new level 1). The game is frozen while paused, ghosts included. The tutorial is only in the main menu.
+- Sounds: `sfx/ui_select` when you point at an option, `sfx/ui_submit` (one at random) when you click one. Both are always converted to mono.
+- The menu's look (colours, positions) is at the top of `src/menu.js`.
+
 ## How to play
+- The current level is shown at the top of the screen, and the pause button at the top right (`hud.level` and `hud.pause` in `src/config.js` set their positions; the pills moved a little to the left to make room).
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
 - Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings or posters).
 - Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
@@ -217,7 +231,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
 ### Sounds
 - Put sounds into `audio-src/`: **WAV** is best (48 kHz, 16 or 24-bit), but **OGG, MP3 and FLAC** also work. Use `audio-src/sfx/` for short effects and `audio-src/ambience/` for loops and music. You can add more folders.
 - Use **lowercase names without spaces**, e.g. `audio-src/sfx/door_creak01.wav`.
-- Export mono for sound effects and voice, stereo only where it matters (ambience, music). Mono files come out about half the size.
+- Export mono for sound effects and voice, stereo only where it matters (ambience, music). Mono files come out about half the size. Everything is converted to 48 kHz, and sounds named `ui_...` are always made mono.
 - `npm run dev` and `npm run build` convert your sounds automatically into `assets/audio/` in two formats:
   - `.ogg` (Opus), the main format;
   - `.m4a` (AAC), for older iPhones.
@@ -236,7 +250,7 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/poster_tear` | the last scratch destroys a poster |
   | `sfx/item` | you pick up a key or pills |
   | `sfx/level_end` | you open the master door |
-  | `sfx/level_start` | a level begins (also the first one, when you click to enter) |
+  | `sfx/level_start` | a level begins (also the first one, when you click START) |
   | `sfx/ghost_spotted` | a ghost fades in |
   | `sfx/flashlight` | the flashlight dies (a ghost appears, or you walk into a dark room); also a lit room's light going out, and switching on a dark room's light |
   | `sfx/heartbeat_slow` | heartbeat, health below 95% |
@@ -244,6 +258,8 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/screamer_long` | health reached 0 |
   | `sfx/screamer_short` | a screamer room's screamer jumps out |
   | `sfx/healed` | you take a pill |
+  | `sfx/ui_select` | menu: pointing at an option (or moving with the arrow keys) |
+  | `sfx/ui_submit` | menu: clicking an option |
 
   Each entry can also have a `volume` (0 to 1). Long sounds (`level_start`) are set to `preload: 'one'`, so only one of them is kept in memory at a time.
 - **Level ambience** is set in `src/config.js` under `ambience`:

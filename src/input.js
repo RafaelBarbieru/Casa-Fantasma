@@ -1,5 +1,5 @@
 // Unified pointer input (mouse / touch / pen) via Pointer Events. Emits scene-space coordinates.
-// handlers: move(p, kind), down(p, kind), tap(p, kind), leave(kind)   kind = 'mouse' | 'touch' | 'pen'
+// handlers: move(p, kind), down(p, kind), up(p, kind), tap(p, kind), leave(kind)   kind = 'mouse' | 'touch' | 'pen'
 const TAP_MAX_MOVE = 14; // css px
 const TAP_MAX_MS = 600;
 
@@ -36,11 +36,16 @@ export function attachInput(el, toScene, h) {
     const dt = performance.now() - active.t;
     const kind = active.kind;
     active = null;
+    h.up?.(toScene(cx, cy), kind);
     // Mouse: any click without a drag. Touch/pen: short tap.
     if (moved <= TAP_MAX_MOVE && (kind === 'mouse' || dt <= TAP_MAX_MS)) h.tap?.(toScene(cx, cy), kind);
   });
 
-  el.addEventListener('pointercancel', () => (active = null));
+  el.addEventListener('pointercancel', (e) => {
+    if (!active || active.id !== e.pointerId) return;
+    active = null;
+    h.up?.(scene(e), e.pointerType);
+  });
   el.addEventListener('pointerleave', (e) => {
     if (e.pointerType === 'mouse') h.leave?.(e.pointerType);
   });

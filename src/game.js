@@ -3,6 +3,7 @@
 // Produces a frame description for Renderer.
 import { CONFIG } from './config.js';
 import { EXIT } from './world.js';
+import { settings } from './settings.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const pickText = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -51,9 +52,10 @@ const TEXT = {
 
 export const floorLineY = () => CONFIG.sceneH * CONFIG.room.floorLine;
 
-// Flashlight flicker when the room comes back (deterministic, cheap).
+// Flashlight flicker when the room comes back (deterministic, cheap). Epilepsy mode: a plain fade.
 function flickerIn(t) {
   if (t >= 1) return 1;
+  if (settings.epilepsy) return Math.min(1, t * 1.6);
   const on = t > 0.75 || Math.sin(t * 61) + Math.sin(t * 157) < 0.7;
   return (on ? 1 : 0.15) * Math.min(1, t * 1.6);
 }
@@ -62,12 +64,19 @@ function flickerIn(t) {
 // comes, the ceiling light of a lit dark room.
 function dying(t) {
   if (t >= CONFIG.ghost.lampOffS) return 0;
+  if (settings.epilepsy) return 1 - t / CONFIG.ghost.lampOffS; // a plain fade out
   return Math.sin(t * 97) + Math.sin(t * 41) > 0 ? 1 : 0.12;
 }
 
 // A screamer image filling the screen: flashing, jittering and pulsing in size. t = seconds since it appeared.
+// Epilepsy mode: shown steady, slowly growing, with no flashing or jitter.
 function screamerOverlay(img, t, holdS) {
   const sc = CONFIG.screamer, W = CONFIG.sceneW, H = CONFIG.sceneH;
+  if (settings.epilepsy) {
+    if (!img) return null;
+    const h = H * (1.05 + 0.08 * Math.min(1, t / holdS)), w = (h * (img.naturalWidth || 1)) / (img.naturalHeight || 1);
+    return { img, rect: [(W - w) / 2, (H - h) / 2, w, h] };
+  }
   if (!img || !((t * sc.flashHz) % 1 < 0.7 || t > holdS * 0.6)) return null;
   const h = H * (1.05 + 0.12 * Math.abs(Math.sin(t * 23)));
   const w = (h * (img.naturalWidth || 1)) / (img.naturalHeight || 1);
@@ -201,6 +210,12 @@ export class Game {
       ? now() + (CONFIG.ghost.graceS - Math.log(1 - Math.random()) * (60 / perMin)) * 1000
       : null;
     this.onRoomChange?.(this);
+  }
+
+  // The game was paused for ms: push the wall-clock timers (random ghost, lingering ghosts) back by as much.
+  shiftClock(ms) {
+    if (this.spawnAt !== null) this.spawnAt += ms;
+    for (const l of this.lingering.values()) l.goneAt += ms;
   }
 
   // The flashlight flickers and dies (see dying()). sfx: play the flashlight sound; otherwise it is simply off.
@@ -790,6 +805,7 @@ export class Game {
       pills: this.phase === 'dead' || this.phase === 'end' ? 0 : this.pills,
       pillHover: this.hover === 'pill',
       title: this.phase === 'end' ? TEXT.level(this.world.level + 1) : null,
+      level: this.phase === 'end' || this.phase === 'dead' ? null : this.world.level,
       // Quantized so the HUD is not redrawn for invisible changes while a ghost drains it.
       health: this.phase === 'dead' || this.phase === 'end' ? null : Math.round(Math.max(0, this.health) * 200) / 200,
     };
@@ -865,7 +881,7 @@ export class Game {
         sprite: sp,
         rect: [cx - (sp.w * s) / 2 - sp.ox * s, cy - (sp.h * s) / 2 - sp.oy * s, sp.tw * s, sp.th * s],
         shadow: [0, 0, 0, 0], glow: [0, 0, 0, 0], glowP: [0, 0], clip: 2,
-        fx: [1, G.alpha * (0.85 + 0.15 * Math.sin(this.time * 9)), CONFIG.ghost.gain, 1],
+        fx: [1, G.alpha * (settings.epilepsy ? 0.9 : 0.85 + 0.15 * Math.sin(this.time * 9)), CONFIG.ghost.gain, 1],
       });
     }
     const lt = D.light;

@@ -17,6 +17,30 @@ const AC = window.AudioContext || window.webkitAudioContext;
 const ctx = AC ? new AC() : null;
 const buffers = new Map();
 
+// Mixer: every sound -> 'sfx' or 'ambience' bus -> 'master' bus -> speakers. setVolumes() drives the bus gains
+// (main menu > Options). vols holds the gains too, for the no-Web-Audio fallback (bed element volume).
+const vols = { master: 1, sfx: 1, ambience: 1 };
+let buses = null;
+function bus(name) {
+  if (!buses) {
+    const master = ctx.createGain();
+    master.connect(ctx.destination);
+    buses = { master, sfx: ctx.createGain(), ambience: ctx.createGain() };
+    buses.sfx.connect(master);
+    buses.ambience.connect(master);
+  }
+  return buses[name];
+}
+
+// Slider positions 0..1 -> gains. Squared: a rough loudness curve, so 50% sounds about half as loud.
+export function setVolumes(s) {
+  for (const k of ['master', 'sfx', 'ambience']) {
+    vols[k] = Math.max(0, Math.min(1, s[k])) ** 2;
+    if (ctx) bus(k).gain.setTargetAtTime(vols[k], ctx.currentTime, 0.02);
+  }
+  if (bed && !bed.gain) bed.el.volume = bedVolume * vols.master * vols.ambience;
+}
+
 // Fetch + decode SFX. Missing/undecodable files only warn, so audio never blocks the game.
 export async function loadSfx(names) {
   if (!ctx) return;
@@ -50,7 +74,8 @@ export async function loadAudioIndex() {
 export const audioNamesWithPrefix = (prefix) => index.filter((n) => n.startsWith(prefix));
 
 // delay: seconds from now (sample-accurate, so stacked sounds don't mask each other). Returns the duration (s).
-export function playSfx(name, volume = 1, delay = 0) {
+// to: mixer bus, 'sfx' or 'ambience'.
+export function playSfx(name, volume = 1, delay = 0, to = 'sfx') {
   const buf = buffers.get(name);
   if (!ctx || !buf) return;
   const src = ctx.createBufferSource();
@@ -62,7 +87,7 @@ export function playSfx(name, volume = 1, delay = 0) {
     src.connect(g);
     node = g;
   }
-  node.connect(ctx.destination);
+  node.connect(bus(to));
   src.start(delay > 0 ? ctx.currentTime + delay : 0);
   return buf.duration;
 }
@@ -74,6 +99,7 @@ let bed = null;      // { el, gain }
 let bedWant = null;  // { name, volume, fadeIn, fadeOut }: last requested bed (kept so unlock can start it)
 let bedName = null;  // what the element currently holds
 let bedToken = 0;    // invalidates pending swaps when a newer request arrives
+let bedVolume = 0;   // target volume of the fallback (no Web Audio) path, before the mixer
 
 function getBed() {
   if (bed) return bed;
@@ -85,7 +111,7 @@ function getBed() {
     gain = ctx.createGain();
     gain.gain.value = 0;
     ctx.createMediaElementSource(el).connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(bus('ambience'));
   }
   return (bed = { el, gain });
 }
@@ -93,7 +119,7 @@ function getBed() {
 // Ramp bed volume to v over s seconds. Without Web Audio, falls back to a hard element.volume set.
 function rampBed(v, s) {
   const { el, gain } = getBed();
-  if (!gain) { el.volume = v; return; }
+  if (!gain) { bedVolume = v; el.volume = v * vols.master * vols.ambience; return; }
   const g = gain.gain, t = ctx.currentTime;
   g.cancelScheduledValues(t);
   g.setValueAtTime(g.value, t);

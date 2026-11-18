@@ -23,6 +23,9 @@ const RATES = {
   2: { opus: '112k', aac: '160k' },
 };
 
+// Sources whose name matches are always encoded mono (UI clicks gain nothing from stereo). Everything is 48 kHz.
+const MONO = /(^|\/)ui_/;
+
 const walk = (dir, rel = '') =>
   fs.existsSync(dir)
     ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -92,7 +95,7 @@ const run = (args) =>
   });
 
 async function encode({ rel, src, outs }) {
-  const ch = channels(src);
+  const ch = MONO.test(rel) ? 1 : channels(src);
   const r = RATES[ch];
   fs.mkdirSync(path.dirname(outs.ogg), { recursive: true });
   const common = ['-y', '-v', 'error', '-i', src, '-map', '0:a:0', '-map_metadata', '-1', '-ac', String(ch), '-ar', '48000'];

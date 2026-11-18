@@ -38,7 +38,7 @@ export function playRandomAmbience() {
   const options = pool.length > 1 ? pool.filter((n) => n !== lastShot) : pool;
   const name = options[(Math.random() * options.length) | 0];
   lastShot = name;
-  playSfx(name, between(r.volume));
+  playSfx(name, between(r.volume), 0, 'ambience');
   return name;
 }
 
