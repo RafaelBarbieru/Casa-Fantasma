@@ -53,15 +53,16 @@ async function boot() {
     console.info('[casa] level', level, 'seed', game.world.seed, game.world);
     wake();
   };
-  // After the "Level N" card: the next level, or, after the last one's "You got out." card, back to the main menu.
-  game.onWorldEnd = () => (game.isLastLevel() ? toMainMenu() : startLevel((game.world.seed + 1) >>> 0, game.world.level + 1));
+  // After the "Level N" card: the next level, or, after the last one's "You got out." card, the run's stats screen.
+  game.onWorldEnd = () => (game.isLastLevel() ? toMainMenu(true) : startLevel((game.world.seed + 1) >>> 0, game.world.level + 1));
   // A new run: level 1 with a new maze, full health and no pills (after death or QUIT: see toMainMenu).
   const newRun = (sound) => {
     game.health = 1;
     game.pills = 0;
+    game.run = { at: performance.now(), ghosts: 0, grams: 0 };
     startLevel((Math.random() * 2 ** 32) >>> 0, 1, sound);
   };
-  game.onDeath = () => toMainMenu(); // health 0 -> screamer -> main menu (a new run, START begins it)
+  game.onDeath = () => toMainMenu(false); // health 0 -> screamer -> stats screen -> main menu (a new run, START begins it)
   game.onSfx = (role, delay) => {
     playRole(role, delay);
     // The long dark between rooms sometimes brings one of the random ambience sounds.
@@ -94,6 +95,7 @@ async function boot() {
     onChange: () => { setVolumes(settings); wake(); },
     onStart: () => {
       started = true;
+      game.run.at = performance.now(); // the run's clock starts now, not when the menu came up
       playRole('levelStart');
       if (!heartbeat) startHeartbeat(() => (menu.open || game.phase === 'dead' || game.phase === 'end' ? null : game.health), wake);
       heartbeat = true;
@@ -113,11 +115,17 @@ async function boot() {
     },
     onQuit: () => toMainMenu(),
   });
-  // Back to the main menu with a fresh run behind it (QUIT, or death). START plays levelStart, so no sound here.
-  function toMainMenu() {
+  // Back to the main menu with a fresh run behind it. START plays levelStart, so no sound here.
+  // escaped: true (last level done) / false (died) shows the run's stats first; undefined (QUIT) goes straight there.
+  function toMainMenu(escaped) {
+    const stats = escaped === undefined ? null : {
+      escaped, level: game.world.level, levels: CONFIG.levels, ms: performance.now() - game.run.at,
+      ghosts: game.run.ghosts, grams: game.run.grams, held: game.pills,
+    };
     started = false;
     newRun(false);
-    menu.show('main');
+    if (stats) menu.showStats(stats);
+    else menu.show('main');
     wake();
   }
   const pause = (sound) => {

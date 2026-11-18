@@ -1,5 +1,5 @@
-// Menus: main (after the start overlay), pause (Esc / HUD pause button), Options (from either) and How to play (main
-// only). Drawn into the HUD canvas with the HUD's pixel font, so they go through the same PS1 framebuffer + colour
+// Menus: main (after the start overlay), pause (Esc / HUD pause button), Options (from either), How to play (main
+// only) and the run's stats (after dying or getting out; MAIN MENU goes to main). Drawn into the HUD canvas with the HUD's pixel font, so they go through the same PS1 framebuffer + colour
 // reduction as the game, over the dimmed room. Input: pointer (move/down/up/tap in scene px) and keyboard (key()).
 // Sounds: CONFIG.sfx uiSelect when an option gets pointed at / selected with the keys, uiSubmit when one is clicked.
 import { CONFIG } from './config.js';
@@ -16,7 +16,19 @@ const LX = 110, CX = 230, ROW_X0 = 96, ROW_X1 = 392; // options rows: label x, c
 const TEXT_X = 26, PARA = 6;              // How to play: text column left edge and gap between paragraphs (HUD px)
 const TEXT_W = PANEL.x - 12 - TEXT_X;     // ...and its wrap width (the picture panel is on the right)
 
+const STATS_LX = 60, STATS_VX = 270;    // stats screen: label and value columns (HUD px)
+
 const button = (id, label, y, extra) => ({ id, kind: 'button', label, y, ...extra });
+
+// The stats screen's verdict on the pills you took (grams; held = pills still in your pocket, died = true if dead).
+export function pillJoke(grams, held, died) {
+  if (!grams && died && held) return `Died with ${held} in your pocket. Saving them for later?`;
+  if (!grams) return 'Not a single one. Very brave, or very stupid.';
+  if (grams <= 2) return 'A responsible adult. Your doctor is proud.';
+  if (grams <= 5) return 'The recommended dose. More or less.';
+  if (grams <= 9) return 'Your pharmacist knows you by name.';
+  return 'Hypochondriac. Ghosts are not contagious.';
+}
 
 export class Menu {
   // Callbacks: onStart() START, onResume() RESUME, onQuit() QUIT, onSfx(role), onChange() a setting changed (apply
@@ -24,7 +36,8 @@ export class Menu {
   constructor({ w, h, art, onStart, onResume, onQuit, onSfx, onChange }) {
     Object.assign(this, { w, h, art, onStart, onResume, onQuit, onSfx, onChange });
     this.open = false;
-    this.page = 'main'; // 'main' | 'pause' | 'options' | 'tutorial'
+    this.page = 'main'; // 'main' | 'pause' | 'options' | 'tutorial' | 'stats'
+    this.stats = null;  // stats page: { escaped, level, levels, ms, ghosts, grams, held } (see main toMainMenu)
     this.from = 'main'; // page that Options / How to play go back to
     this.tut = 0;       // How to play page index
     this.sel = null;    // id of the highlighted option
@@ -37,6 +50,14 @@ export class Menu {
     this.page = this.from = page;
     this.sel = page === 'pause' ? 'resume' : null;
     this.drag = null;
+  }
+
+  // The end-of-run stats; its MAIN MENU button leads to the main menu.
+  showStats(stats) {
+    this.show('main');
+    this.page = 'stats';
+    this.stats = stats;
+    this.sel = 'menu';
   }
 
   // --- layout + hit testing (HUD px) ---------------------------------------
@@ -62,6 +83,7 @@ export class Menu {
         button('back', 'BACK', 236),
         this.tut < TUTORIAL.length - 1 && button('next', '>', 236, { x: 330 }),
       ].filter(Boolean);
+      case 'stats': return [button('menu', 'MAIN MENU', 222)];
     }
     return [];
   }
@@ -133,6 +155,7 @@ export class Menu {
       case 'start': this.open = false; return this.onStart();
       case 'resume': this.open = false; return this.onResume();
       case 'quit': return this.onQuit();
+      case 'menu': return this.go('main', 'start');
       case 'options': return this.go('options');
       case 'tutorial': this.tut = 0; return this.go('tutorial');
       case 'back': return this.go(this.from, this.page === 'tutorial' ? 'tutorial' : 'options');
@@ -191,6 +214,7 @@ export class Menu {
     } else if (k === 'Escape' || k === 'Backspace') {
       if (e.repeat) return true;
       if (this.page === 'options' || this.page === 'tutorial') this.activate({ id: 'back' });
+      else if (this.page === 'stats') this.activate({ id: 'menu' });
       else if (this.page === 'pause') this.activate({ id: 'resume' });
     } else return false;
     return true;
@@ -199,7 +223,7 @@ export class Menu {
   // --- drawing -----------------------------------------------------------------
   // Redraws the HUD canvas only when something visible changed (bumps hud.version).
   draw(hud) {
-    const sig = 'menu' + JSON.stringify([this.page, this.sel, this.tut, settings]);
+    const sig = 'menu' + JSON.stringify([this.page, this.sel, this.tut, settings, this.page === 'stats' && this.stats]);
     if (sig === hud.sig) return;
     hud.sig = sig;
     hud.version++;
@@ -218,6 +242,22 @@ export class Menu {
     if (this.page === 'main') center('CASA FANTASMA', 60, C.title, 3, C.titleShadow);
     else if (this.page === 'pause') center('PAUSED', 60, C.title, 3, C.titleShadow);
     else if (this.page === 'options') center('OPTIONS', 22, C.title, 2, C.titleShadow);
+    else if (this.page === 'stats') {
+      const S = this.stats, sec = Math.round(S.ms / 1000);
+      center(S.escaped ? 'YOU GOT OUT' : 'YOU DIED', 34, C.title, 3, C.titleShadow);
+      const rows = [
+        ['TIME', `${Math.floor(sec / 60)} MIN ${String(sec % 60).padStart(2, '0')} S`],
+        ['LEVEL', `${S.level} OF ${S.levels}`],
+        ['GHOSTS ESCAPED', String(S.ghosts)],
+        ['PILLS INGESTED', `${S.grams} ${S.grams === 1 ? 'GRAM' : 'GRAMS'}`],
+      ];
+      rows.forEach(([label, value], i) => {
+        const y = 84 + i * 24;
+        hud.text(label, STATS_LX, y, C.idle, 2);
+        hud.text(value, STATS_VX, y, C.hot, 2);
+      });
+      center(`(${pillJoke(S.grams, S.held, !S.escaped)})`, 84 + 3 * 24 + 22, C.body, 1);
+    }
     else if (this.page === 'tutorial') {
       const page = TUTORIAL[this.tut], P = PANEL;
       center(page.title, 18, C.title, 2, C.titleShadow);

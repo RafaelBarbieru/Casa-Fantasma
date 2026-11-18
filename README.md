@@ -34,6 +34,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Settings are saved in the browser and remembered next time.
 - Keyboard: arrow keys (or WASD) move and change values (and turn the tutorial's pages), **Enter** or **Space** clicks, **Escape** goes back.
 - **Pause menu:** press **Escape** or click the pause button at the top right during the game (switching to another tab or app also pauses). It has **RESUME**, **OPTIONS** and **QUIT** (back to the main menu; the run is lost and the next START is a new level 1). The game is frozen while paused, ghosts included. The tutorial is only in the main menu.
+- **Stats screen:** when a run ends (you die, or you get out of level 10) a screen shows how long the run took, the level you reached, how many ghosts you escaped (leaving a room with a ghost in it, once per ghost per room) and how many grams of pills you took (1 pill = 1 gram), with a joke about the pills. **MAIN MENU** (or Enter / Escape) goes to the main menu. QUIT from the pause menu skips it. Paused time does not count. The jokes are in `pillJoke()` at the top of `src/menu.js`.
 - Sounds: `sfx/ui_select` when you point at an option, `sfx/ui_submit` (one at random) when you click one. Both are always converted to mono.
 - The menu's look (colours, positions) is at the top of `src/menu.js`.
 
@@ -42,7 +43,7 @@ After "Click to enter", the main menu appears over the dimmed first room (the am
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
 - Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings or posters).
 - Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
-- A run has **10 levels**. The master door of level 10 shows "You got out." and goes back to the main menu (a placeholder until there is a real ending). `levels` at the top of `src/config.js` sets the count.
+- A run has **10 levels**. The master door of level 10 shows "You got out." and then the stats screen (a placeholder until there is a real ending). `levels` at the top of `src/config.js` sets the count.
 
 ### Difficulty
 Levels 1-5 ease you in. Levels 6-10 get much harder: things go wrong more and more often up to level 10. The basics never change between levels: health, how fast a ghost hurts you, how much a pill heals, how long a ghost stays, how long you have to react. All of it is in `src/config.js`, as lists with **one value per level** (the first value is level 1, the last one is level 10). Roughly, from level 5 to level 10:
@@ -87,7 +88,7 @@ To change one level, change its value in the list. Lists shorter than 10 repeat 
 - Health does not come back on its own (see `regenPerS`) and carries over between levels.
 - **Pills** are hidden behind some paintings (never one that hides a key). Once you take them they pile up at the top right with a count; click the icon to take one. A pill heals **50% of full health**, never above 100%. Taking one always uses it up, even at full health. Pills carry over between levels and are lost when you die.
   - They are rare early on and get a little more common as ghosts do: none in level 1, then on average 0.35, 0.6, 1, 1.3, 1.6, 1.6, 1.7, 1.8 and 1.9.
-- At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), and you are sent back to the main menu; START begins a new run from level 1.
+- At 0% a screamer flashes on screen with a scream (`sfx/screamer_long`), then the stats screen shows, then the main menu; START begins a new run from level 1.
 
 ### Dark rooms
 - Any room except the first one of a level can be **dark**, from level 1 on. Walking in feels exactly like a ghost room: the flashlight flickers and dies. You can't tell which it is until a ghost does (or doesn't) appear.

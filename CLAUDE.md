@@ -42,7 +42,7 @@ Do not add a 3D runtime unless the user explicitly asks for one.
 ## Layout
 ```
 index.html          canvas, start overlay, rotate hint, debug CSS
-src/menu.js         menus: main (START / HOW TO PLAY / OPTIONS), pause (RESUME / OPTIONS / QUIT), Options (sliders, epilepsy toggle; BACK -> `from`), tutorial (main only; pages in src/tutorial.js), drawn into the HUD canvas with the pixel font (hud.sig 'menu…'); pointer + keyboard; shown after the start overlay, START -> levelStart, heartbeat, random ambience, enterRoom
+src/menu.js         menus: main (START / HOW TO PLAY / OPTIONS), pause (RESUME / OPTIONS / QUIT), Options (sliders, epilepsy toggle; BACK -> `from`), tutorial (main only; pages in src/tutorial.js), stats (`showStats`, after death / last level; MAIN MENU -> main; `pillJoke`), drawn into the HUD canvas with the pixel font (hud.sig 'menu…'); pointer + keyboard; shown after the start overlay, START -> levelStart, heartbeat, random ambience, enterRoom
 src/tutorial.js     TUTORIAL pages { title, text[], draw(k) }: pictures drawn into PANEL (HUD px) from sprites by id + a wall/floor texture (main passes `art`); helpers sprite/glowOnly/room/beam/pointer/keyChip/lever
 src/settings.js     `settings` {master, ambience, sfx, epilepsy} + load/save (localStorage, guarded so Node imports work). game.js/hud.js read settings.epilepsy
 src/main.js         boot, on-demand rAF loop (wake()), resize, input wiring, world regeneration
@@ -101,6 +101,7 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - In an occluded/automated Chrome tab rAF runs ~2 fps and dt is capped at 0.05, so transitions take ~10x longer there.
 
 ## Menu + epilepsy mode
+- Run stats: `game.run = { at, ghosts, grams }` (main newRun resets; START sets `at`; shiftClock pushes `at`). ghosts++ in enterRoom when leaving a room with `this.ghost`, and at the master door with one; grams++ in usePill. main `toMainMenu(escaped)`: true/false -> stats page, undefined (QUIT) -> main.
 - index.html overlay: "Click to enter" + loud-noise/epilepsy warning (#warning).
 - Overlay tap -> unlockAudio (ambience bed starts) + `menu.show()`. While `menu.open`, main routes input/keys to the menu and draws `menu.draw(hud)` instead of `hud.update`; leaving resets `hud.sig`. Before START (`started` false) the game keeps updating and the light follows the pointer (`aim`).
 - Pause (`started && menu.open`): Esc, the HUD pause button (`CONFIG.hud.pause`, hit-tested in main.js, not game.js; hover via `hudState + pause`), or the tab going hidden. game.update is skipped; RESUME calls `game.shiftClock(pausedMs)` (spawnAt + lingering goneAt are wall-clock). Heartbeat's getHealth returns null while a menu is open. QUIT -> `newRun(false)` (no levelStart sound) + main menu.

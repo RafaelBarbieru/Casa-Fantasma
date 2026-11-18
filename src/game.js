@@ -158,6 +158,9 @@ export class Game {
     this.storm = null;    // lightning running: { t }, or null
     this.face = null;     // a face outside a window: { win: index into room.windows, t }, or null
     this.screamer = null; // image shown while dead
+    // This run's stats for the end screen (main resets them per run and sets `at` on START): at = performance.now()
+    // when it began (pauses push it forward, see shiftClock), ghosts = ghosts escaped, grams = pills taken (1 g each).
+    this.run = { at: now(), ghosts: 0, grams: 0 };
   }
 
   setWorld(world) {
@@ -183,6 +186,8 @@ export class Game {
   }
 
   enterRoom(i) {
+    // Leaving a room with a ghost in it (ghost room, random or lingering one) counts as escaping it.
+    if (this.ghost && this.roomIndex !== i) this.run.ghosts++;
     // Escaping a random ghost: it stays behind in that room for a random while.
     if (this.ghost?.random && this.roomIndex !== i) {
       const { id, x, y } = this.ghost;
@@ -297,6 +302,7 @@ export class Game {
     if (this.gustAt !== null) this.gustAt += ms;
     if (this.thunderAt !== null) this.thunderAt += ms;
     for (const l of this.lingering.values()) l.goneAt += ms;
+    this.run.at += ms;
   }
 
   // performance.now() ms of the earliest wall-clock event in this room (random ghost, false alarm, gust, thunder), or
@@ -883,6 +889,7 @@ export class Game {
   usePill() {
     if (this.pills <= 0) return;
     this.pills--;
+    this.run.grams++;
     this.health = Math.min(1, this.health + CONFIG.pills.heal);
     this.say(pickText(TEXT.healed));
     this.onSfx?.('healed');
@@ -945,6 +952,7 @@ export class Game {
       this.exposure = 1 - Math.min(1, this.phaseT) ** 2;
       if (this.phaseT >= 1) {
         if (win) {
+          if (this.ghost) this.run.ghosts++; // got out through the master door with a ghost behind you
           this.phase = 'end';
           this.phaseT = 0;
           this.exposure = 0;
