@@ -7,6 +7,7 @@ import { VS, FS_BG, FS_ITEM, FS_HUD, FS_POST } from './shaders.js';
 const NO_FX = [0, 1, 1, 0];
 const NO_ROT = [0, 0, 0];
 const NO_CRACK = [0, 0, 0, 0];
+const NO_TEAR = [0, 0, 0, 0];
 const NO_ROOM_LIGHT = [0, 0, 1, 0];
 
 export class Renderer {
@@ -184,7 +185,8 @@ export class Renderer {
 
   // frame = { light:{x,y,r,exposure, room?:[x,y,reach,amount]}, overlay?:{img,rect}, bg: { wall, floor, wallTile, floorTile } | null,
 //           items: [{ sprite, rect:[x,y,w,h], shadow:[ux,uy,bias,str], glow:[r,g,b,a], glowP:[bias,brighten], clip,
-//                     fx?, rot?:[radians, pivotX, pivotY], crack?:[u, v, amount, seed] }] }
+//                     fx?, rot?:[radians, pivotX, pivotY], crack?:[u, v, amount, seed],
+//                     tear?:[[sx, sy, threshold, seed], [boxU, boxV, boxW, boxH], [aspect, dmax, jag, rim]] }] }
   // hud = Hud (canvas + version) or null
   draw(frame, hud) {
     if (this.lost) return;
@@ -244,6 +246,12 @@ export class Renderer {
         gl.uniform3fv(u.uRot, it.rot ?? NO_ROT);
         gl.uniform4fv(u.uCrack, it.crack ?? NO_CRACK);
         if (it.crack) gl.uniform3f(u.uCrackP, CONFIG.paintings.crackPx / it.rect[3], CONFIG.paintings.crackDarken, it.rect[2] / it.rect[3]);
+        gl.uniform4fv(u.uTear, it.tear?.[0] ?? NO_TEAR);
+        if (it.tear) {
+          gl.uniform4fv(u.uTearB, it.tear[1]);
+          gl.uniform4fv(u.uTearP, it.tear[2]);
+          gl.uniform3fv(u.uTearC, CONFIG.posters.paper);
+        }
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
     }

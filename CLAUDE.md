@@ -15,7 +15,7 @@ The user-facing docs are in README.md; keep them in sync when workflows change.
 
 ## Art pipeline (as delivered)
 The user said "GLB", but they actually deliver **pre-rendered WebP**:
-- Flat `art-src/`, named by kind: `doorNN`, `paintingNN` (items, alpha, cropped; screen size = native px × `item.scale` × `slot.scale`), `wallNN`, `floorNN` (seamless POT tiling textures).
+- Flat `art-src/`, named by kind: `doorNN`, `paintingNN`, `posterNN` (items, alpha, cropped; screen size = native px × `item.scale` × `slot.scale`), `wallNN`, `floorNN` (seamless POT tiling textures).
 - No room backgrounds: the scene is 1920×1080 scene px (`CONFIG.sceneW/H`); FS_BG tiles the wall above `room.floorLine` and draws the floor in perspective below it.
 Sources (png/jpg -> lossy q90 WebP, webp copied as-is) -> `tools/images.mjs` -> `assets/<name>.webp`. Data files reference the generated `assets/...webp` paths.
 Do not add a 3D runtime unless the user explicitly asks for one.
@@ -31,7 +31,7 @@ Do not add a 3D runtime unless the user explicitly asks for one.
   - It also writes `assets/audio/index.json` (all sound names, rewritten only on change), which the runtime uses to resolve prefixes.
   - Bitrates are in `RATES`: Opus 64k mono / 112k stereo, AAC 96k / 160k. Sample rate is 48 kHz.
 - `src/audio.js` `audioUrl(name)` returns a URL for ONE format, chosen with `canPlayType` (Opus preferred).
-  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken).
+  - SFX: `CONFIG.sfx` maps role -> `{ files: prefix, preload?, volume? }`. `src/sfx.js` `initSfx()` resolves the prefix against index.json (pool), decodes per `preload` ('all' at boot | 'one' = one decoded at a time, swapped after each play | 'none' = lazy). `playRole(role, delay)` picks at random without immediate repeats. `game.onSfx(role, delay)` -> `playRole`. Roles: door, locked, painting (slips), fall (painting falls + cracks), posterScratch, posterTear (last scratch), item (key/pills taken), levelEnd, levelStart (on the start-overlay tap and in `startLevel`), flashlight, ghostSpotted, heartbeatSlow/Fast, screamer (death, sfx/screamer_long), screamerShort (screamer room), lightSwitch (uses sfx/flashlight), healed (pill taken).
   - Long ambience/music should stream through an `<audio>` element plus MediaElementSource, because decoded PCM costs ~23 MB per stereo minute (a mobile memory risk).
   - Level ambience: `CONFIG.ambience.loops` and `.random.pool` are name PREFIXES resolved via index.json (`ambienceLoops()` / `ambiencePool()` in ambience.js). `generateWorld` picks `world.ambience` from the loops (seeded, last, so layouts don't shift), excluding `avoidAmbience` = the previous level's loop (main.startLevel passes it). `src/ambience.js` `setLevelAmbience(world)` -> `audio.playLoop()`: ONE reused `<audio loop>` element -> MediaElementSource -> GainNode (fades; reuse keeps iOS unlocked). Requests before the gesture are queued and start in `unlockAudio()`.
   - Random one-shots: `CONFIG.ambience.random` (pool, gapS, firstDelayS, chance, volume), decoded with the SFX at boot, setTimeout chain, Math.random (not seeded), no immediate repeats, skipped while hidden. The tab going hidden suspends the context and pauses the bed.
@@ -53,7 +53,7 @@ src/world.js        generateWorld(seed, db, {ambience, maze}): pure, seeded lock
 src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
 src/debug.js        overlay (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot
-data/items.json     { id: { src, scale, depth, placement:[tags] } }   tags: "door" | "wall" (paintings)
+data/items.json     { id: { src, scale, depth, placement:[tags], kind? } }   tags: "door" | "wall" (paintings + posters); kind "poster" = tears
 data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery"
 data/ghosts.json    { ghosts: { id: { src, scale } }, screamers: { id: { src } } }   ghosts load as sprites (same Map as items)
 data/surfaces.json  { walls: { id: { src, tile } }, floors: { id: { src, tile } } }   tile = scene px per repeat (floor: at the floor line)
@@ -83,7 +83,7 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Explored glow: `Game.isExplored(room)` = every painting searched and every door unlocked (if locked), not EXIT, leading to an explored room (recursive over the tree). `markExplored()` sets `item.explored` on room entry and after a search; `frame()` then uses `CONFIG.glow.explored` (dull, no pulse).
 - Using a key consumes it. The master door plays levelEnd, fades (winOutS), shows "Level N+1" (winHoldS, a tap skips it), then `main.startLevel(seed+1, level+1)` builds a NEW world (fresh inventory, start room has no back) and plays levelStart. Debug: N = new seed same level, L = next level.
 - Each room also gets `wall`/`floor` (seeded, picked after its items); the wall always differs from the parent room's.
-- Seed 42, level 1: room 0 doors -> rooms 3, 1, 2; the master key is behind painting03 in room 2; the master door (door07) is in room 5 (0 -> 3 -> 5).
+- Seed 42, level 1: room 0 doors -> rooms 3, 1, 2; the master key is behind painting01 in room 2; the master door (door07) is in room 5 (0 -> 3 -> 5). Room 7 (0 -> 3 -> 5 -> 7, lit) has poster01 + poster05.
 - Headless check: import world.js + game.js in Node with stub sprites (full masks), tap item centres, step update(0.05). Game has no DOM deps.
 - `?debug` exposes `window.casa = { game, renderer, assets, db }` for console poking (e.g. `casa.game.die()`).
 - In an occluded/automated Chrome tab rAF runs ~2 fps and dt is capped at 0.05, so transitions take ~10x longer there.
@@ -99,6 +99,13 @@ tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (ha
 - Pose = `{ kind, side, px, py, dx, dy, ang, crack? }` (rotate around pivot, then shift; `toWorld`/`toLocal` in game.js). Kept in `game.poses` (uid -> pose) so re-entering shows it moved. `_maskAt` hit-tests through the pose.
 - Loot = key/master_key/health sprite (`lootId(e)`) on the wall near the painting's top on `side` (`makeLoot`), in `room.loot`, drawn before the items, hit-tested first, tap -> `takeLoot` (keys/pills, sfx item, `game.taken`). `isExplored` needs it taken.
 - Renderer: item `rot: [ang, pivotX, pivotY]` (VS `uRot`, all programs share VS, default 0) and `crack: [u, v, amount, seed]` (FS_ITEM procedural rays, `uCrackP`). Sprites carry `box` = tight alpha bounds (assets.makeSprite).
+
+## Posters
+- Wall art with `kind: 'poster'` (items.json). world.js treats them as paintings (same "wall" tag, keys/pills behind them); only game.js differs. Adding them changed seed dressing (art/walls), not the room graph.
+- Tap -> `Game.scratchPoster`: first tap rolls the rip (`makeRip`, Math.random, kept in `game.rips` uid -> R): `hp/max` (CONFIG.posters.scratches), start point `sx, sy` on the art box edge, `dmax`, `reach` (= 1 - leftover, raised so the loot is always uncovered by then), loot spot `lu, lv` + `need` (grid search for the threshold closest to a random `lootAt` share). Loot is pushed to `room.loot` then (`makePosterLoot` -> shared `placeLoot`).
+- Tear threshold `tearOf(R) = reach * (1 - hp/max)`; `it.tear` animates toward it (tearS). Field = distance from the start point / dmax (`tearAt`, box coords), + value noise in the shader. `_maskAt` drops torn pixels (no noise); `coveredLoot(it)` blocks hit-testing loot until `it.tear >= need`.
+- hp 0 -> `searched` (dull explored glow), sfx posterTear; otherwise posterScratch.
+- Renderer: item `tear: [[sx, sy, thr, seed], box uv rect, [aspect, dmax, jagged, rim]]` -> FS_ITEM `uTear*` (cuts sprite, shadow and glow; pale rim `uTearC` = CONFIG.posters.paper).
 
 ## Ghosts + health
 - Ghost rooms (`kind: 'ghost'`, from `ghost.roomChance[level]`) are made from leftover dead-end doors in world.js (>= 1 per level when the chance > 0 and a leftover exists): `items: []`, no surfaces (bg null = black), fixed `ghost: { id, x, y }`. `isExplored(ghost room)` = visited.

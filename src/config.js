@@ -36,6 +36,21 @@ export const CONFIG = {
     fallenGain: 0.8,    // a fallen painting is a bit darker
   },
 
+  // Posters (data/items.json "kind": "poster", src/game.js). Each tap scratches a piece off, ripping outward from a
+  // random point on the poster's edge; once the hidden key or pill is uncovered it can be taken. When a poster has
+  // no scratches left it is destroyed: a few scraps stay on the wall, and it glows dull like a moved painting.
+  posters: {
+    scratches: [3, 8],  // taps it takes to destroy a poster (random in range, inclusive, rolled on the first tap)
+    lootAt: [0.3, 1],   // where the hidden item sits, as the share of the poster that must be torn to uncover it
+                        // (random in range). 1 = only once the poster is destroyed.
+    leftover: 0.25,     // share of the poster still on the wall when destroyed (0 = torn off completely)
+    jagged: 0.18,       // how ragged the torn edge is (0 = a smooth curve)
+    rim: 0.02,          // width of the light torn-paper edge (0 = none)
+    paper: [0.5, 0.46, 0.37], // colour of that edge (the flashlight brightens it)
+    tearS: 0.25,        // how fast each scratch tears its piece off
+    shake: 0.4,         // how much the poster jolts on each scratch (0..1 of a locked door's shake)
+  },
+
   // Duration (s) of the shake when a locked door is tried.
   lockedShakeS: 0.35,
 
@@ -130,6 +145,8 @@ export const CONFIG = {
     locked: { files: 'sfx/locked' },            // trying a locked door without its key
     painting: { files: 'sfx/painting' },        // a painting slips
     fall: { files: 'sfx/fall' },                // a painting falls to the floor and cracks
+    posterScratch: { files: 'sfx/poster_scratch' }, // a piece of a poster is scratched off
+    posterTear: { files: 'sfx/poster_tear' },   // the last scratch destroys a poster
     item: { files: 'sfx/item' },                // picking up a key or pills
     levelEnd: { files: 'sfx/level_end' },       // the master door opens
     levelStart: { files: 'sfx/level_start', preload: 'one' }, // a level begins

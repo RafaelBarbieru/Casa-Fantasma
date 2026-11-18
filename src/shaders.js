@@ -79,6 +79,10 @@ uniform float uClip;   // texture v below which glow + shadow are cut (floor ite
 uniform vec4 uFx;      // self-lit 0..1 (ignores the flashlight), opacity, brightness, additive 0..1 (ghosts)
 uniform vec4 uCrack;   // cracks (fallen paintings): impact point u, v; amount 0..1 (0 = none); seed
 uniform vec3 uCrackP;  // line width (uv of the height), darkening, texture aspect w/h
+uniform vec4 uTear;    // torn posters: rip start point (box coords 0..1), threshold (0 = untorn), noise seed
+uniform vec4 uTearB;   // art box in texture uv: x, y, w, h (box coords = (uv - xy) / zw)
+uniform vec4 uTearP;   // box aspect w/h, max distance from the start point, edge jaggedness, paper rim width
+uniform vec3 uTearC;   // colour of the torn paper rim
 // Jagged rays out of the impact point. Only runs for a cracked item (uniform branch, no texture fetch inside).
 float crack(vec2 uv) {
   vec2 q = (uv - uCrack.xy) * vec2(uCrackP.z, 1.0) + 1e-4;
@@ -92,15 +96,41 @@ float crack(vec2 uv) {
   }
   return c;
 }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0)), f.x), f.y);
+}
+// Tear field: distance from the rip's start point (0 there, ~1 at the far corner) + jagged noise. Paper whose field is
+// below the threshold is gone. src/game.js tearAt() is the same without the noise (hit test, loot placement).
+float tearField(vec2 uv) {
+  vec2 q = (uv - uTearB.xy) / uTearB.zw;
+  vec2 a = vec2(uTearP.x, 1.0);
+  float d = length((q - uTear.xy) * a) / uTearP.y;
+  vec2 n = q * a + uTear.w;
+  return d + uTearP.z * (0.65 * vnoise(n * 7.0) + 0.35 * vnoise(n * 23.0) - 0.5);
+}
 void main() {
   vec4 s = texture2D(uTex, vUv);
+  // Torn poster: cut the paper away (uniform branch; the texture fetches below stay outside it).
+  float keepSh = 1.0, keepGlow = 1.0, rim = 0.0;
+  if (uTear.z > 0.0) {
+    float f = tearField(vUv);
+    float keep = step(uTear.z, f);
+    rim = keep * (1.0 - step(uTear.z + uTearP.w, f)) * s.a;
+    keepGlow = smoothstep(uTear.z - 0.08, uTear.z + 0.02, f);
+    keepSh = step(uTear.z, tearField(vUv - uShadow.xy));
+    s *= keep;
+  }
   float under = (1.0 - s.a) * step(vUv.y, uClip);
-  float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under;
+  float sh = texture2D(uTex, vUv - uShadow.xy, uShadow.z).a * uShadow.w * under * keepSh;
   float L = mix(lightAt(vP), 1.0, uFx.x);
   vec3 col = s.rgb * mix(uTint, vec3(1.0), uFx.x) * L * uFx.z * (1.0 + uGlowP.y * uGlow.a);
   if (uCrack.z > 0.0) col *= 1.0 - crack(vUv) * uCrack.z * uCrackP.y;
+  col = mix(col, uTearC * mix(uTint, vec3(1.0), uFx.x) * L * s.a, rim);
   if (uGlow.a > 0.001) {
-    float b = texture2D(uTex, vUv, uGlowP.x).a;
+    float b = texture2D(uTex, vUv, uGlowP.x).a * keepGlow;
     float g = smoothstep(0.0, 0.5, b) * under * uGlow.a;
     col += uGlow.rgb * g * (0.3 + 0.7 * min(L, 1.0));
   }

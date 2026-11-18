@@ -26,14 +26,15 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 
 ## How to play
 - Move the mouse (or drag a finger) to aim the flashlight. Things you can interact with glow when you point at them.
-- Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings).
+- Every level is a maze. The first room has **3 doors**. A door leads either to another door room (2 or 3 doors) or to a **painting room** (1 to 4 paintings or posters).
 - Each level has one locked **master door**. Opening it takes you to the next level, and there is no way back.
 - Click a painting and it slips off one nail and swings, showing the wall behind it. Sometimes something hangs there (a key or pills): **click it to take it**. Now and then a painting falls to the floor instead and cracks, with a crash.
+- **Posters** have to be scratched off: every click tears a piece away (with a scratching sound), ripping outward from a random spot on the poster's edge. A poster takes between 3 and 8 clicks. A key or pills hidden under it can be taken as soon as it is fully uncovered, which is sometimes early and sometimes only with the last scratch. The last scratch tears the poster apart with a louder ripping sound; a few scraps stay on the wall.
 - Keys you hold appear at the top left, each with a small picture of the door it opens. The **master key is gold**; other keys are grey. Every locked door looks different from all the other doors in the level, so the picture tells you which one it is.
 - **Level 1** has only the master door locked. From **level 2** on there are also locked **side doors**: their keys are somewhere in the level, and behind them is either the master key or nothing useful.
 - Click the arrow at the bottom (**back**) to return to the room you came from.
 - **The glow tells you what's left.** A warm, pulsing glow means there is still something to find there. A dull, still, grey-blue glow means there's nothing left:
-  - on a painting, you've already moved it;
+  - on a painting, you've already moved it; on a poster, you've torn it apart;
   - on a door, you've explored everything behind it: every painting moved, everything behind them taken, and every door opened, all the way down.
 
   A door with a locked door anywhere behind it that you haven't opened stays warm. So does the master door.
@@ -91,6 +92,12 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
   - `fallSfxDelayS`: delay of the fall sound. 0 = when you click; set it to the same value as `fallS` to play it exactly when the painting hits the floor.
   - `crackPx`, `crackDarken`, `fallenGain`: crack thickness and darkness, and how much darker a fallen painting is.
   - The key pictures are `art-src/key.png` and `art-src/master_key.png` (pills use `health.png`); their size on the wall is `scale` in `data/items.json`.
+- `posters`: how posters tear.
+  - `scratches`: how many clicks it takes to destroy a poster (random between the two, inclusive).
+  - `lootAt`: how much of the poster has to be torn off before the hidden key or pills are uncovered, as a share (random between the two). `1` means only when the poster is destroyed; `[0.3, 1]` makes it anything from early on to the very last scratch.
+  - `leftover`: how much of the poster stays on the wall as scraps when it's destroyed (0.25 = about a quarter).
+  - `jagged`: how ragged the torn edge is. `rim`, `paper`: width and colour of the pale torn-paper edge.
+  - `tearS`: how fast each piece tears off. `shake`: how much the poster jolts on each click.
 - `heartbeat`: when it starts, when it switches to fast, and the gaps between beats. `thumps` says when the heart picture jumps within each heartbeat sound; update it if you replace those sounds.
 - `healthHud`: the heart's position and size, how much it jumps per beat, how dark the lost part is, and how strong the red edge glow gets.
 - `screamer`: how long it lasts and how fast it flashes (also how fast the screamer-room screamers flash).
@@ -179,6 +186,11 @@ To add a texture:
 
 ### Items
 - Doors are items with `"placement": ["door"]` and go in `door` slots. Paintings use `"wall"`.
+- Posters are wall items too, with `"kind": "poster"` added, which makes them tear instead of slipping. They are mixed in with the paintings at random. Give them a small `depth` (1): they lie flat on the wall.
+
+```json
+"poster01": { "src": "assets/poster01.webp", "scale": 2.8, "depth": 1, "placement": ["wall"], "kind": "poster" }
+```
 - A painting room needs as many `wall` slots as the most paintings it can have (4), and they must not overlap.
 - Render with a **transparent background** (Film → Transparent), crop to the object, and export as **PNG with alpha** (or WebP) into `art-src/`.
 - Low-resolution art is fine: the PS1 look renders the whole screen at low resolution anyway (see below). Use `scale` in `items.json` to give every door or painting a sensible size.
@@ -192,7 +204,7 @@ To add a texture:
 `placement` must match a slot's `accepts`. Here, "wall" items only go in wall slots.
 
 ### Where images go
-Put your source images in `art-src/` (PNG, JPG or WebP). `npm run dev` and `npm run build` turn them automatically into small WebP files in `assets/`, in the same folder structure: `art-src/door01.png` becomes `assets/door01.webp`. Name files by what they are (`doorNN`, `paintingNN`, `wallNN`, `floorNN`). That `.webp` path is what you write in the `data/*.json` files.
+Put your source images in `art-src/` (PNG, JPG or WebP). `npm run dev` and `npm run build` turn them automatically into small WebP files in `assets/`, in the same folder structure: `art-src/door01.png` becomes `assets/door01.webp`. Name files by what they are (`doorNN`, `paintingNN`, `posterNN`, `wallNN`, `floorNN`). That `.webp` path is what you write in the `data/*.json` files.
 While `npm run dev` is running, a new or changed image (or sound) is converted within a second; just reload the page. Deleting a source also deletes its converted file. To redo every image, run `npm run images:force`.
 Don't put anything in `assets/` yourself: it is generated, not saved in git, and may be overwritten.
 
@@ -220,6 +232,8 @@ Keep exporting **rendered images** from Blender (WebP) rather than GLB files. A 
   | `sfx/locked` | you try a locked door without its key |
   | `sfx/painting` | a painting slips |
   | `sfx/fall` | a painting falls to the floor and cracks |
+  | `sfx/poster_scratch` | a piece of a poster is scratched off |
+  | `sfx/poster_tear` | the last scratch destroys a poster |
   | `sfx/item` | you pick up a key or pills |
   | `sfx/level_end` | you open the master door |
   | `sfx/level_start` | a level begins (also the first one, when you click to enter) |

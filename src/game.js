@@ -21,7 +21,11 @@ const toLocal = (P, x, y) => {
   const c = Math.cos(P.ang), s = Math.sin(P.ang), qx = x - P.px - P.dx, qy = y - P.py - P.dy;
   return [P.px + c * qx + s * qy, P.py - s * qx + c * qy];
 };
-// What is hidden behind a painting: the sprite id of the item, or null.
+// Torn poster ("rip", see makeRip): its tear field at q = point in the art's box (0..1), without the shader's noise
+// (FS_ITEM tearField): 0 at the rip's start point, ~1 at the far corner. Paper below the threshold is gone.
+const tearAt = (R, qx, qy) => Math.hypot((qx - R.sx) * R.aspect, qy - R.sy) / R.dmax;
+const tearOf = (R) => R.reach * (1 - R.hp / R.max); // threshold after the scratches so far
+// What is hidden behind a painting or poster: the sprite id of the item, or null.
 const lootId = (e) => (e.key !== undefined ? (e.key === 0 ? 'master_key' : 'key') : e.pill ? 'health' : null);
 
 const TEXT = {
@@ -30,6 +34,9 @@ const TEXT = {
   unlock: ['The key turns. The door opens.'],
   unlockMaster: ['The key turns. There is no way back.'],
   lootFound: ['Something was hidden behind the painting.', 'There is something behind it.'],
+  posterLoot: ['Something was hidden under the poster.', 'There is something under the paper.'],
+  posterNothing: ['Nothing under it.', 'Only bare wall underneath.'],
+  torn: ['There is nothing left to tear.', 'Only scraps are left.'],
   nothing: ['Nothing behind it.', 'Only dust behind the frame.', 'Nothing.'],
   fell: ['The painting crashes to the floor.', 'It falls and cracks.'],
   searched: ['You already looked behind this one.'],
@@ -111,6 +118,7 @@ export class Game {
     this.searched = new Set();
     this.taken = new Set();
     this.poses = new Map(); // uid -> { kind: 'tilt' | 'fall', side, px, py, dx, dy, ang, crack? }
+    this.rips = new Map();  // uid -> torn poster state (see makeRip)
     this.visited = new Set();
     this.lingering = new Map(); // room -> { id, x, y, goneAt }: random ghosts you escaped, still there for a while
     this.lit = new Set();       // dark rooms whose light switch is on
@@ -152,10 +160,15 @@ export class Game {
         crack: 0,    // 0..1 cracks drawn on a fallen painting
       };
       if (it.pose?.kind === 'fall') it.crack = 1;
+      if (def.kind === 'poster') {
+        it.rip = this.rips.get(it.uid) ?? null; // null until first scratched
+        it.tear = it.rip ? tearOf(it.rip) : 0;  // shown tear threshold (animates toward tearOf)
+      }
       return it;
     });
-    // Items uncovered behind moved paintings and not taken yet (drawn behind their painting, tapped to take).
-    const loot = items.filter((it) => it.pose && !this.taken.has(it.uid)).map((it) => this.makeLoot(it)).filter(Boolean);
+    // Items behind moved paintings / scratched posters, not taken yet (drawn behind them, tapped to take).
+    const loot = items.filter((it) => (it.pose || it.rip) && !this.taken.has(it.uid))
+      .map((it) => (it.rip ? this.makePosterLoot(it) : this.makeLoot(it))).filter(Boolean);
     const sf = this.db.surfaces;
     const bg = {
       wall: this.assets.surfaces.get(spec.wall), wallTile: sf.walls[spec.wall]?.tile ?? 512,
@@ -292,7 +305,14 @@ export class Game {
     const pw = it.sprite.w * it.s, lw = (b[2] - b[0]) * s, lh = (b[3] - b[1]) * s;
     // Centre of the visible part of the art: as far to the side as fits inside the painting, but not past 30%.
     const off = Math.max(0, Math.min(pw * 0.3, pw / 2 - lw / 2 - P.lootTop));
-    const vx = it.cx + side * off, vy = it.y0 + P.lootTop + lh / 2;
+    return this.placeLoot(it, id, it.cx + side * off, it.y0 + P.lootTop + lh / 2);
+  }
+
+  // Loot item `id` with its visible box centred on (vx, vy), hidden behind room item `it` (stored as .painting,
+  // whether it is a painting or a poster).
+  placeLoot(it, id, vx, vy) {
+    const sprite = this.assets.sprites.get(id), s = this.db.items[id]?.scale ?? 1, b = sprite.box;
+    const lw = (b[2] - b[0]) * s, lh = (b[3] - b[1]) * s;
     // Sprite origin so the visible box lands centred on (vx, vy).
     const x0 = vx - ((b[0] + b[2]) / 2) * s, y0 = vy - ((b[1] + b[3]) / 2) * s;
     return {
@@ -300,6 +320,75 @@ export class Game {
       clip: 2, box: [vx - lw / 2, vy - lh / 2, vx + lw / 2, vy + lh / 2],
       rect: [x0 - sprite.ox * s, y0 - sprite.oy * s, sprite.tw * s, sprite.th * s],
     };
+  }
+
+  // A poster's tear state, rolled on its first scratch (Math.random, like the paintings' poses):
+  //   hp / max      scratches left / total (CONFIG.posters.scratches)
+  //   sx, sy        where the rip starts, on the edge of the art's box (box coords 0..1)
+  //   aspect, dmax  box w/h; distance from the start to the farthest corner (normalises the tear field to ~0..1)
+  //   reach         tear threshold once destroyed (1 - leftover, or more so the loot is always uncovered by then)
+  //   lu, lv, need  hidden item centre (box coords) and the threshold at which it is fully uncovered
+  //   seed          shape of the jagged edge
+  makeRip(it) {
+    const C = CONFIG.posters, b = it.sprite.box, aspect = (b[2] - b[0]) / (b[3] - b[1]);
+    const max = C.scratches[0] + Math.floor(Math.random() * (C.scratches[1] - C.scratches[0] + 1));
+    const t = Math.random(), edge = (Math.random() * 4) | 0;
+    const [sx, sy] = [[t, 0], [1, t], [t, 1], [0, t]][edge];
+    const dmax = Math.max(...[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => Math.hypot((x - sx) * aspect, y - sy)));
+    const R = { hp: max, max, sx, sy, aspect, dmax, reach: 1 - C.leftover, seed: Math.random() * 100, lu: 0.5, lv: 0.5, need: 0 };
+    const id = lootId(it.e), ls = id && this.assets.sprites.get(id);
+    if (ls) {
+      // Loot size in box units, then the spot (on a grid inside the poster) whose uncovering threshold is closest to a
+      // random share of the tear. The noise can push the edge jagged/2 further, so that is added as a margin.
+      const s = this.db.items[id]?.scale ?? 1, lb = ls.box;
+      const lw = ((lb[2] - lb[0]) * s) / ((b[2] - b[0]) * it.s), lh = ((lb[3] - lb[1]) * s) / ((b[3] - b[1]) * it.s);
+      const span = (size, i) => (size >= 0.92 ? 0.5 : 0.04 + size / 2 + (i / 6) * (0.92 - size));
+      const needAt = (u, v) => C.jagged / 2 + 0.02 + Math.max(...[[-1, -1], [1, -1], [-1, 1], [1, 1]]
+        .map(([a, c]) => tearAt(R, u + (a * lw) / 2, v + (c * lh) / 2)));
+      const target = between(C.lootAt) * R.reach;
+      let best = null;
+      for (let i = 0; i <= 6; i++) for (let j = 0; j <= 6; j++) {
+        const u = span(lw, i), v = span(lh, j), need = needAt(u, v);
+        if (!best || Math.abs(need - target) < Math.abs(best.need - target)) best = { u, v, need };
+      }
+      Object.assign(R, { lu: best.u, lv: best.v, need: best.need, reach: Math.max(R.reach, best.need) });
+    }
+    return R;
+  }
+
+  // The item hidden under a scratched poster, at its spot from makeRip. null if nothing is hidden.
+  makePosterLoot(it) {
+    const id = lootId(it.e), R = it.rip, b = it.sprite.box;
+    if (!id || !this.assets.sprites.get(id)) return null;
+    const vx = it.x0 + (b[0] + R.lu * (b[2] - b[0])) * it.s, vy = it.y0 + (b[1] + R.lv * (b[3] - b[1])) * it.s;
+    return this.placeLoot(it, id, vx, vy);
+  }
+
+  // Tap on a poster: one scratch tears a piece off. The last one destroys it (dull glow, a few scraps stay).
+  scratchPoster(it) {
+    if (!it.rip) {
+      it.rip = this.makeRip(it);
+      this.rips.set(it.uid, it.rip);
+      const loot = this.makePosterLoot(it);
+      if (loot) this.room.loot.push(loot);
+    }
+    const R = it.rip, hidden = lootId(it.e) && !this.taken.has(it.uid);
+    if (R.hp <= 0) return void this.say(pickText(hidden ? TEXT.lootLeft : TEXT.torn));
+    const covered = tearOf(R) < R.need;
+    R.hp--;
+    it.shake = Math.max(it.shake, CONFIG.posters.shake);
+    if (R.hp === 0) {
+      this.searched.add(it.uid);
+      this.markExplored();
+      this.onSfx?.('posterTear');
+    } else this.onSfx?.('posterScratch');
+    if (hidden && covered && tearOf(R) >= R.need) this.say(pickText(TEXT.posterLoot));
+    else if (R.hp === 0 && !hidden) this.say(pickText(TEXT.posterNothing));
+  }
+
+  // True while the item hidden under poster `it` is still (partly) covered by paper.
+  coveredLoot(it) {
+    return !!it.rip && it.tear < it.rip.need - 1e-3;
   }
 
   // Resting pose for a painting that slips off one nail: it hangs from the top corner opposite `side` and swings
@@ -464,6 +553,7 @@ export class Game {
     if (h.lightSwitch) return void this.turnOnLight();
     if (h.painting) return void this.takeLoot(h);
     const e = h.e;
+    if (h.def.kind === 'poster') return void this.scratchPoster(h);
     if (e.to !== undefined) {
       // Door
       if (e.lock !== undefined && !this.unlocked.has(h.uid)) {
@@ -510,7 +600,13 @@ export class Game {
     const sp = it.sprite, P = this.poseOf(it);
     if (P) [x, y] = toLocal(P, x, y);
     const lx = Math.floor((x - it.x0) / it.s), ly = Math.floor((y - it.y0) / it.s);
-    return lx >= 0 && ly >= 0 && lx < sp.w && ly < sp.h && sp.mask[ly * sp.w + lx] === 1;
+    if (!(lx >= 0 && ly >= 0 && lx < sp.w && ly < sp.h && sp.mask[ly * sp.w + lx] === 1)) return false;
+    // Torn-away paper is not there any more.
+    if (it.tear > 0) {
+      const b = sp.box;
+      return tearAt(it.rip, (lx + 0.5 - b[0]) / (b[2] - b[0]), (ly + 0.5 - b[1]) / (b[3] - b[1])) >= it.tear;
+    }
+    return true;
   }
 
   _hitItem(it, p, kind) {
@@ -535,7 +631,7 @@ export class Game {
     if (this.room.spec.parent >= 0 && Math.abs(p.x - b.x) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2) return 'back';
     // In the dark only the light switch can be found; once it is on, the switch is just part of the wall.
     if (this.inDark()) return this.room.sw && this._hitItem(this.room.sw, p, kind) ? this.room.sw : null;
-    for (const l of this.room.loot) if (!l.painting.anim && this._hitItem(l, p, kind)) return l;
+    for (const l of this.room.loot) if (!l.painting.anim && !this.coveredLoot(l.painting) && this._hitItem(l, p, kind)) return l;
     const items = this.room.items;
     for (let i = items.length - 1; i >= 0; i--) if (this._hitItem(items[i], p, kind)) return items[i];
     return null;
@@ -647,6 +743,18 @@ export class Game {
       }
     }
 
+    // Posters: each scratch tears its piece off quickly. Once the loot is uncovered it can be hovered.
+    for (const it of this.room.items) {
+      if (!it.rip) continue;
+      const target = tearOf(it.rip);
+      if (it.tear === target) continue;
+      const was = this.coveredLoot(it);
+      it.tear = approach(it.tear, target, 4 / CONFIG.posters.tearS, dt);
+      if (target - it.tear < 0.002) it.tear = target;
+      if (was && !this.coveredLoot(it) && this.lastPointer && this.phase === 'idle') this.pointerMove(this.lastPointer.p, this.lastPointer.kind);
+      busy = true;
+    }
+
     const g = CONFIG.glow;
     const glowing = [...this.room.items, ...this.room.loot];
     if (this.room.sw) glowing.push(this.room.sw);
@@ -729,6 +837,11 @@ export class Game {
       };
       // Moved painting: shifted rect, rotated around the shifted pivot.
       if (pose) out.rot = [pose.ang, pose.px + pose.dx + shakeX, pose.py + pose.dy];
+      if (it.tear > 0) {
+        const R = it.rip, sp = it.sprite, b = sp.box, C = CONFIG.posters;
+        out.tear = [[R.sx, R.sy, it.tear, R.seed], [(sp.ox + b[0]) / sp.tw, (sp.oy + b[1]) / sp.th, (b[2] - b[0]) / sp.tw, (b[3] - b[1]) / sp.th],
+          [R.aspect, R.dmax, C.jagged, C.rim]];
+      }
       if (it.crack > 0) {
         out.crack = [pose.crack[0], pose.crack[1], it.crack, pose.crack[2]];
         out.fx = [0, 1, P.fallenGain, 0];
