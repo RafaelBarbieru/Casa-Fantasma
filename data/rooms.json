@@ -23,5 +23,14 @@
       { "id": "lever-4", "x": 1460, "y": 560, "accepts": ["lever"] },
       { "id": "lever-5", "x": 1620, "y": 560, "accepts": ["lever"] }
     ]
+  },
+  "crooked": {
+    "slots": [
+      { "id": "door",   "x": 330,  "anchor": "floor", "accepts": ["door"] },
+      { "id": "hang-1", "x": 760,  "y": 440, "accepts": ["hang"] },
+      { "id": "hang-2", "x": 1060, "y": 440, "accepts": ["hang"] },
+      { "id": "hang-3", "x": 1360, "y": 440, "accepts": ["hang"] },
+      { "id": "hang-4", "x": 1660, "y": 440, "accepts": ["hang"] }
+    ]
   }
 }

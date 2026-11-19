@@ -40,5 +40,6 @@
   "lever_base":   { "src": "assets/lever_base.webp", "scale": 0.55, "depth": 1, "placement": ["lever"] },
   "lever_handle": { "src": "assets/lever_handle.webp", "scale": 0.55, "depth": 4, "placement": [] },
   "window":       { "src": "assets/window.webp", "scale": 1.6, "depth": 2, "placement": [] },
-  "window_door":  { "src": "assets/window_door.webp", "scale": 1.6, "depth": 0, "placement": [] }
+  "window_door":  { "src": "assets/window_door.webp", "scale": 1.6, "depth": 0, "placement": [] },
+  "trapdoor":     { "src": "assets/trapdoor.webp", "scale": 1, "depth": 0, "placement": [] }
 }

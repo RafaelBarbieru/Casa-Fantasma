@@ -1,10 +1,11 @@
 // Game state: maze position, inventory, flashlight, hover/glow, room transitions, ghosts + hidden health, dark rooms
-// (light switch, ceiling light, screamer rooms), lever rooms, windows + weather (gusts, thunder, faces), HUD state.
+// (light switch, ceiling light, screamer rooms), lever rooms (plain + wired), crooked painting rooms, trapdoor
+// rooms, windows + weather (gusts, thunder, faces), HUD state.
 // Produces a frame description for Renderer.
 import { CONFIG, atLevel } from './config.js';
 import { EXIT } from './world.js';
 import { settings } from './settings.js';
-import { clueId } from './assets.js';
+import { clueId, CORD, TRAP } from './assets.js';
 import { L } from './i18n.js';
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
@@ -33,6 +34,8 @@ const tearOf = (R) => R.reach * (1 - R.hp / R.max); // threshold after the scrat
 // stays where it is.
 const lootId = (e) => (e.key !== undefined ? (e.key === 0 ? 'master_key' : 'key') : e.pill ? 'health' : null);
 const hiddenId = (e) => lootId(e) ?? (e.clue ? clueId(e.clue) : null);
+// Crooked room painting: its lean (radians, clockwise) at hang position p (0 straight, 1 right, 2 left).
+const hangAngle = (p) => rad(CONFIG.crooked.tiltDeg) * [0, 1, -1][p];
 
 // Player-facing text: src/locales/*.js `game` (i18n.js).
 const TEXT = () => L().game;
@@ -155,6 +158,7 @@ export class Game {
     this.lit = new Set();       // dark rooms whose light switch is on
     this.leverPos = new Map();  // lever room -> [0 | 1 per lever] (0 = up, 1 = down), kept when you leave the room
     this.leverHold = 0;         // seconds left before the levers snap back up after a wrong try
+    this.hangPos = new Map();   // crooked room -> [0 | 1 | 2 per painting] (straight, right, left), kept like leverPos
     this.shut = new Set();      // rooms whose window shutters the wind has slammed shut
     this.gust = null;
     this.ghost = null;
@@ -180,12 +184,20 @@ export class Game {
     const items = spec.items.map((e, idx) => {
       const slot = template.slots.find((s) => s.id === e.slot);
       const def = this.db.items[e.item];
-      const sprite = this.assets.sprites.get(e.item);
-      const s = (def.scale ?? 1) * (slot.scale ?? 1);
+      const open = e.trap && this.unlocked.has(`${i}:${idx}`);
+      const sprite = this.assets.sprites.get(open ? 'trapdoor_open' : e.item);
+      let s = (def.scale ?? 1) * (slot.scale ?? 1);
+      // Crooked room paintings are shrunk into one box, so tilted neighbours never overlap.
+      if (e.hang !== undefined) {
+        const b = sprite.box, F = CONFIG.crooked.fit;
+        s = Math.min(s, F[0] / (b[2] - b[0]), F[1] / (b[3] - b[1]));
+      }
       const h = sprite.h * s;
-      const onFloor = slot.anchor === 'floor';
-      // Floor items stand on the wall/floor line; wall items are pushed up so they never reach the floor.
-      const cy = onFloor ? floorY - h / 2 : Math.min(slot.y, floorY - CONFIG.room.wallMargin - h / 2);
+      const onFloor = slot.anchor === 'floor' && !e.trap;
+      // Floor items stand on the wall/floor line; wall items are pushed up so they never reach the floor. A trapdoor
+      // lies on the floor: its hole's centre traps.drop below the line.
+      const cy = e.trap ? floorY + CONFIG.traps.drop - (TRAP.holeY - sprite.h / 2) * s
+        : onFloor ? floorY - h / 2 : Math.min(slot.y, floorY - CONFIG.room.wallMargin - h / 2);
       const x0 = slot.x - (sprite.w * s) / 2;
       const y0 = cy - h / 2;
       const it = {
@@ -204,6 +216,10 @@ export class Game {
         it.leverT = 0;      // shown position: 0 up .. 1 down (animates toward leverPos, see update)
         it.leverFast = false;
       }
+      if (e.hang !== undefined) {
+        it.hang = e.hang;  // index into hangPos
+        it.swing = null;   // { from, t } while it swings to its next position (see hangPose)
+      }
       if (def.kind === 'poster') {
         it.rip = this.rips.get(it.uid) ?? null; // null until first scratched
         it.tear = it.rip ? tearOf(it.rip) : 0;  // shown tear threshold (animates toward tearOf)
@@ -211,8 +227,8 @@ export class Game {
       return it;
     });
     // Items behind moved paintings / scratched posters, not taken yet (drawn behind them, tapped to take).
-    const loot = items.filter((it) => (it.pose || it.rip) && !this.taken.has(it.uid))
-      .map((it) => (it.rip ? this.makePosterLoot(it) : this.makeLoot(it))).filter(Boolean);
+    const loot = items.filter((it) => (it.pose || it.rip || (it.e.trap && this.unlocked.has(it.uid))) && !this.taken.has(it.uid))
+      .map((it) => (it.rip ? this.makePosterLoot(it) : it.e.trap ? this.makeTrapLoot(it) : this.makeLoot(it))).filter(Boolean);
     const sf = this.db.surfaces;
     const bg = {
       wall: this.assets.surfaces.get(spec.wall), wallTile: sf.walls[spec.wall]?.tile ?? 512,
@@ -221,12 +237,17 @@ export class Game {
     this.room = { spec, template, bg: spec.kind === 'ghost' ? null : bg, items, loot };
     // Lever room: levers start up the first time; afterwards they are where you left them.
     const leverDoor = items.find((it) => it.e.levers);
-    if (leverDoor && !this.leverPos.has(i)) this.leverPos.set(i, leverDoor.e.levers.map(() => 0));
+    if (leverDoor && !this.leverPos.has(i)) this.leverPos.set(i, leverDoor.e.linked?.slice() ?? leverDoor.e.levers.map(() => 0));
+    // Crooked room: the paintings start crooked (world.js scramble), then stay as you left them.
+    const hangDoor = items.find((it) => it.e.crooked);
+    if (hangDoor && !this.hangPos.has(i)) this.hangPos.set(i, hangDoor.e.crooked.slice());
+    this.room.cords = this.makeCords(items);
     this.leverHold = 0;
     for (const it of items) if (it.lever !== undefined) it.leverT = this.leverPos.get(i)[it.lever];
     this.room.windows = (spec.windows ?? []).map((w) => this.makeWindow(w, this.shut.has(i))).filter(Boolean);
     this.room.sw = spec.dark ? this.makeSwitch(spec, [...items, ...this.room.windows]) : null;
     this.markExplored();
+    if (!spec.dark || this.lit.has(i)) this.introPuzzle();
     this.hover = null;
     this.phase = 'in';
     this.phaseT = 0;
@@ -468,6 +489,7 @@ export class Game {
     this.onSfx?.('lightSwitch');
     if (this.room.spec.dark.screamer) this.jump = { img: this.pickScreamer(), t: -CONFIG.darkRooms.screamerDelayS };
     this.markExplored();
+    this.introPuzzle();
     // Things under a resting pointer can glow now.
     if (this.lastPointer) this.pointerMove(this.lastPointer.p, this.lastPointer.kind);
     this.onRoomChange?.(this);
@@ -664,27 +686,158 @@ export class Game {
     this.say(pickText(loot?.clue ? TEXT().clueFound : loot ? TEXT().lootFound : pose.kind === 'fall' ? TEXT().fell : TEXT().nothing));
   }
 
-  // True when the current room is a lever room whose door has been opened (its levers stay put from then on).
-  leversSolved() {
-    const d = this.room.items.find((it) => it.e.levers);
+  // The current room's puzzle door (lever room or crooked room), or undefined.
+  puzzleDoor(items = this.room.items) {
+    return items.find((it) => it.e.levers || it.e.crooked);
+  }
+
+  // True when the current room is a puzzle room whose door has been opened (its levers or paintings stay put).
+  puzzleSolved() {
+    const d = this.puzzleDoor();
     return !!d && this.unlocked.has(d.uid);
   }
 
-  // Tap on a lever: it flips up or down. Once the door has been opened they are stuck.
+  // Wired lever and crooked rooms say what they are when you first see them (entering, or switching the light on),
+  // so they are not mistaken for a lever room whose clue you haven't found.
+  introPuzzle() {
+    const d = this.puzzleDoor();
+    if (!d || this.unlocked.has(d.uid)) return;
+    if (d.e.trap) this.say(pickText(d.e.linked ? TEXT().trapWired : d.e.crooked ? TEXT().trapCrooked : TEXT().trapLevers));
+    else if (d.e.linked) this.say(pickText(TEXT().linkedIntro));
+    else if (d.e.crooked) this.say(pickText(TEXT().crookedIntro));
+  }
+
+  // A wired lever or crooked room puzzle was just solved: its door unlocks (or its trapdoor opens) by itself.
+  solvePuzzle(text, delayS) {
+    const d = this.puzzleDoor();
+    this.onSfx?.('leverSuccess', delayS);
+    if (d.e.trap) return void this.openTrap(d, delayS);
+    this.unlocked.add(d.uid);
+    this.say(pickText(text));
+    this.markExplored();
+  }
+
+  // A trapdoor room's puzzle is solved: the trapdoor bangs open, showing what lies inside (or nothing).
+  openTrap(it, delayS = 0) {
+    this.unlocked.add(it.uid);
+    this.searched.add(it.uid);
+    it.sprite = this.assets.sprites.get('trapdoor_open') ?? it.sprite; // same size as the shut one: same rect
+    it.shake = 1;
+    const loot = this.makeTrapLoot(it);
+    if (loot) this.room.loot.push(loot);
+    this.onSfx?.('door', delayS);
+    this.say(pickText(loot ? TEXT().trapLoot : TEXT().trapEmpty));
+    this.markExplored();
+    if (this.lastPointer) this.pointerMove(this.lastPointer.p, this.lastPointer.kind); // the loot can glow now
+  }
+
+  // What lies in an open trapdoor (key, gold key or pills), on the bottom of its hole. null if nothing.
+  makeTrapLoot(it) {
+    const id = lootId(it.e);
+    if (!id || !this.assets.sprites.get(id)) return null;
+    return this.placeLoot(it, id, it.cx, it.y0 + TRAP.holeY * it.s);
+  }
+
+  // Tap on a trapdoor: shut, it says what opens it (plain levers: it is how you try them, like a lever door); open,
+  // it says what is (still) inside.
+  tapTrap(it) {
+    const e = it.e;
+    if (this.unlocked.has(it.uid)) {
+      return void this.say(pickText(lootId(e) && !this.taken.has(it.uid) ? TEXT().trapLootLeft : TEXT().trapNothing));
+    }
+    if (e.crooked) return void this.puzzleShut(it, TEXT().crookedShut);
+    if (this.leverHold <= 0) this.tryLevers(it);
+  }
+
+  // Tap on a wired lever or crooked room door before its puzzle is solved.
+  puzzleShut(door, text) {
+    door.shake = 1;
+    this.onSfx?.('locked');
+    this.say(pickText(text));
+  }
+
+  // Tap on a lever: it flips up or down (wired levers flip their neighbours too). Once the door has been opened
+  // they are stuck.
   pullLever(it) {
     if (this.leverHold > 0) return;
-    if (this.leversSolved()) return void this.say(pickText(TEXT().leversStuck));
-    this.leverPos.get(this.roomIndex)[it.lever] ^= 1;
+    if (this.puzzleSolved()) return void this.say(pickText(TEXT().leversStuck));
+    const pos = this.leverPos.get(this.roomIndex), d = this.puzzleDoor(), span = d?.e.linked ? 1 : 0;
+    for (let k = it.lever - span; k <= it.lever + span; k++) if (k >= 0 && k < pos.length) pos[k] ^= 1;
     this.onSfx?.('lever');
+    if (span && d.e.levers.every((v, k) => v === pos[k])) this.solvePuzzle(TEXT().linkedRight, CONFIG.levers.pullS);
+  }
+
+  // The nail a crooked room painting hangs from (scene px): top middle of its art.
+  nailOf(it) {
+    return [it.cx, it.y0 + it.sprite.box[1] * it.s + 6];
+  }
+
+  // Pose of a crooked room painting (see toWorld): it leans around its nail by its position; while it swings to
+  // the next one it overshoots a little and settles, like a slipped painting.
+  hangPose(it) {
+    const to = hangAngle(this.hangPos.get(this.roomIndex)[it.hang]), sw = it.swing;
+    const p = sw ? Math.min(1, sw.t / CONFIG.crooked.turnS) : 1;
+    const ang = sw ? sw.from + (to - sw.from) * (1 - Math.exp(-6 * p) * Math.cos(11 * p)) : to;
+    const [px, py] = this.nailOf(it);
+    return { kind: 'hang', side: 1, px, py, dx: 0, dy: 0, ang };
+  }
+
+  // Tap on a crooked room painting: it and the paintings next to it (tied by the cord) turn one step. Once they
+  // all hang straight, the door opens and they stay put.
+  turnPainting(it) {
+    if (this.puzzleSolved()) return void this.say(pickText(TEXT().crookedStuck));
+    const pos = this.hangPos.get(this.roomIndex);
+    for (const o of this.room.items) {
+      if (o.hang === undefined || Math.abs(o.hang - it.hang) > 1) continue;
+      o.swing = { from: this.hangPose(o).ang, t: 0 }; // from where it is shown now (it may still be swinging)
+      pos[o.hang] = (pos[o.hang] + 1) % 3;
+    }
+    this.onSfx?.('painting');
+    if (pos.every((v) => v === 0)) this.solvePuzzle(TEXT().crookedRight, CONFIG.crooked.turnS * 0.6);
+  }
+
+  // The cords tying a wired lever room's levers, or a crooked room's paintings, to their neighbours: one sagging
+  // cord (assets.js addCordSprites, stretched and turned) per pair, as room-item-like objects for frame(). Drawn
+  // behind the items, never hit. [] in other rooms.
+  makeCords(items) {
+    const door = this.puzzleDoor(items);
+    if (!door || !(door.e.linked || door.e.crooked)) return [];
+    const wire = !!door.e.linked, sp = this.assets.sprites.get(wire ? 'cord:wire' : 'cord:rope');
+    if (!sp) return [];
+    const at = (it) => {
+      if (!wire) return this.nailOf(it);
+      const b = it.sprite.box; // lever plate: middle, a little above its bottom edge
+      return [it.x0 + ((b[0] + b[2]) / 2) * it.s, it.y0 + (b[3] - CONFIG.cords.leverDrop * (b[3] - b[1])) * it.s];
+    };
+    const row = items.filter((it) => (wire ? it.e.lever : it.e.hang) !== undefined)
+      .sort((a, b) => (wire ? a.e.lever - b.e.lever : a.e.hang - b.e.hang));
+    return row.slice(1).map((it, k) => {
+      const [ax, ay] = at(row[k]), [bx, by] = at(it), len = Math.hypot(bx - ax, by - ay);
+      const s = len / (CORD.x1 - CORD.x0), x0 = ax - CORD.x0 * s, y0 = ay - CORD.y * s;
+      return {
+        sprite: sp, s, cx: ax + len / 2, cy: ay + (sp.h / 2 - CORD.y) * s, x0, y0, depth: 1, glow: 0, shake: 0, clip: 2,
+        explored: false, rect: [x0 - sp.ox * s, y0 - sp.oy * s, sp.tw * s, sp.th * s],
+        pose: { kind: 'cord', px: ax, py: ay, dx: 0, dy: 0, ang: Math.atan2(by - ay, bx - ax) },
+      };
+    });
   }
 
   // Tap on a lever door that is still shut: true (and it stays open from now on) when the levers match its
-  // combination. Otherwise the door jolts and, after a moment, every lever snaps back up.
+  // combination. Otherwise the door jolts and, after a moment, every lever snaps back up. Wired levers open the
+  // door by themselves, so trying it only says it is shut.
   tryLevers(door) {
+    if (door.e.linked) {
+      this.puzzleShut(door, TEXT().linkedShut);
+      return false;
+    }
     const pos = this.leverPos.get(this.roomIndex);
     if (door.e.levers.every((v, i) => v === pos[i])) {
-      this.unlocked.add(door.uid);
       this.onSfx?.('leverSuccess');
+      if (door.e.trap) {
+        this.openTrap(door);
+        return true;
+      }
+      this.unlocked.add(door.uid);
       this.say(pickText(TEXT().leverRight));
       return true;
     }
@@ -693,7 +846,7 @@ export class Game {
     for (const it of this.room.items) if (it.lever !== undefined) it.leverFast = true;
     door.shake = 1;
     this.onSfx?.('leverFail');
-    this.say(pickText(TEXT().leverWrong));
+    this.say(pickText(door.e.trap ? TEXT().trapWrong : TEXT().leverWrong));
     return false;
   }
 
@@ -749,6 +902,7 @@ export class Game {
 
   // Current pose (animated or resting), or null for an item that never moved.
   poseOf(it) {
+    if (it.hang !== undefined) return this.hangPose(it);
     return it.pose ? (it.anim ? this.animPose(it) : it.pose) : null;
   }
 
@@ -760,9 +914,9 @@ export class Game {
     if (this.world.rooms[r].dark && !this.lit.has(r)) return false;
     return this.world.rooms[r].items.every((e, idx) => {
       const uid = `${r}:${idx}`;
-      if (e.lever !== undefined) return true; // the lever door says whether this room is done
+      if (e.lever !== undefined || e.hang !== undefined) return true; // the puzzle door says whether this room is done
       if (e.to === undefined) return this.searched.has(uid) && (!lootId(e) || this.taken.has(uid));
-      if (e.to === EXIT || ((e.lock !== undefined || e.levers) && !this.unlocked.has(uid))) return false;
+      if (e.to === EXIT || ((e.lock !== undefined || e.levers || e.crooked) && !this.unlocked.has(uid))) return false;
       return this.isExplored(e.to);
     });
   }
@@ -770,12 +924,12 @@ export class Game {
   // Item.explored drives the dull glow. Only taps in this room can change it, so it is refreshed on entry and
   // after a painting is searched.
   markExplored() {
-    const leversDone = this.leversSolved();
+    const solved = this.puzzleSolved();
     for (const it of this.room.items) {
       const e = it.e;
-      it.explored = e.lever !== undefined ? leversDone
+      it.explored = e.lever !== undefined || e.hang !== undefined ? solved
         : e.to === undefined ? this.searched.has(it.uid)
-        : e.to !== EXIT && ((e.lock === undefined && !e.levers) || this.unlocked.has(it.uid)) && this.isExplored(e.to);
+        : e.to !== EXIT && ((e.lock === undefined && !e.levers && !e.crooked) || this.unlocked.has(it.uid)) && this.isExplored(e.to);
     }
   }
 
@@ -828,10 +982,13 @@ export class Game {
     if (h.painting) return void this.takeLoot(h);
     const e = h.e;
     if (h.lever !== undefined) return void this.pullLever(h);
+    if (h.hang !== undefined) return void this.turnPainting(h);
+    if (e.trap) return void this.tapTrap(h);
     if (h.def.kind === 'poster') return void this.scratchPoster(h);
     if (e.to !== undefined) {
       // Door
       if (e.levers && !this.unlocked.has(h.uid) && (this.leverHold > 0 || !this.tryLevers(h))) return;
+      if (e.crooked && !this.unlocked.has(h.uid)) return void this.puzzleShut(h, TEXT().crookedShut);
       if (e.lock !== undefined && !this.unlocked.has(h.uid)) {
         if (!this.keys.includes(e.lock)) {
           h.shake = 1;
@@ -1101,6 +1258,14 @@ export class Game {
       }
     }
 
+    // Crooked room paintings swinging to their next position.
+    for (const it of this.room.items) {
+      if (!it.swing) continue;
+      it.swing.t += dt;
+      if (it.swing.t >= CONFIG.crooked.turnS) it.swing = null;
+      busy = true;
+    }
+
     // Posters: each scratch tears its piece off quickly. Once the loot is uncovered it can be hovered.
     for (const it of this.room.items) {
       if (!it.rip) continue;
@@ -1228,13 +1393,15 @@ export class Game {
     if (this.phase !== 'end') {
       // The switch is lit like everything else, so in the dark only its hover glow gives it away.
       if (this.room.sw) items.push(draw(this.room.sw));
-      // Loot hangs on the wall behind its painting, so it is drawn first.
-      for (const l of this.room.loot) items.push(draw(l));
+      // Loot hangs on the wall behind its painting, so it is drawn first (but in front of an open trapdoor's hole).
+      for (const l of this.room.loot) if (!l.painting.e.trap) items.push(draw(l));
+      for (const c of this.room.cords) items.push(draw(c)); // behind the levers / paintings they tie together
       for (const it of this.room.items) {
         items.push(draw(it));
         const handle = it.lever !== undefined && this.leverHandle(it); // on top of its base
         if (handle) items.push(draw(handle));
       }
+      for (const l of this.room.loot) if (l.painting.e.trap) items.push(draw(l));
     }
     const G = this.ghost;
     if (G && G.alpha > 0 && this.phase !== 'end' && this.phase !== 'wait') {

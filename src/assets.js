@@ -158,6 +158,116 @@ function addWindowSprites(sprites) {
   sprites.set('window_face', makeSprite(face));
 }
 
+// Cords tying wired levers / crooked paintings together (game.js makeCords): 'cord:wire' and 'cord:rope', one sagging
+// span each (CONFIG.cords). CORD = its end points in native px: the game stretches and turns the sprite so they land
+// on the two things it ties, so its sag and thickness grow with the span.
+export const CORD = { x0: 6, x1: 250, y: 8 };
+
+function addCordSprites(sprites) {
+  for (const [id, k] of [['cord:wire', 'wire'], ['cord:rope', 'rope']]) {
+    const C = CONFIG.cords[k], canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = CORD.y + C.sag + C.width + 6;
+    const c = canvas.getContext('2d');
+    // Quadratic sag: the control point sits twice as low as the curve's lowest point.
+    const curve = (dy) => {
+      c.beginPath();
+      c.moveTo(CORD.x0, CORD.y + dy);
+      c.quadraticCurveTo(128, CORD.y + 2 * C.sag + dy, CORD.x1, CORD.y + dy);
+      c.stroke();
+    };
+    c.lineCap = 'round';
+    c.strokeStyle = `rgb(${C.color.join(',')})`;
+    c.lineWidth = C.width;
+    curve(0);
+    c.strokeStyle = `rgba(${C.shine.join(',')},0.7)`; // a thin highlight along the top edge
+    c.lineWidth = Math.max(1, C.width / 3);
+    curve(-C.width / 4);
+    // Knots / clamps at both ends.
+    c.fillStyle = `rgb(${C.color.join(',')})`;
+    for (const x of [CORD.x0, CORD.x1]) {
+      c.beginPath();
+      c.arc(x, CORD.y, C.width * 0.9, 0, Math.PI * 2);
+      c.fill();
+    }
+    sprites.set(id, makeSprite(canvas));
+  }
+}
+
+// Trapdoor of a trapdoor room (world.js 8.): the art (data/items.json "trapdoor", a flat top-down texture) is laid
+// on the floor in perspective. 'trapdoor' = the shut hatch; 'trapdoor_open' = the dark hole with the lid standing up
+// behind it (the same texture, in shadow). Both have the same canvas size, so they share a rect.
+// TRAP = native px of those canvases: size, the hatch's far/near edges and their half widths, the hole's centre height.
+export const TRAP = { w: 320, h: 240, top: 150, bottom: 232, topHalf: 100, bottomHalf: 134, holeY: 191 };
+
+function addTrapSprites(sprites) {
+  const art = sprites.get('trapdoor');
+  if (!art) return;
+  const T = TRAP, cx = T.w / 2, tw = art.w, th = art.h;
+  const canvas = () => {
+    const c = document.createElement('canvas');
+    c.width = T.w;
+    c.height = T.h;
+    return [c, c.getContext('2d')];
+  };
+  // The texture squeezed into a trapezoid from row y0 (half width h0) to row y1 (half width h1), one screen row at a
+  // time. vAt(t) = texture row (0..1) at the share t of the way down; `flip` mirrors it top to bottom.
+  const warp = (c, y0, y1, h0, h1, vAt, flip = false) => {
+    for (let y = y0; y < y1; y++) {
+      const t0 = (y - y0) / (y1 - y0), t1 = (y + 1 - y0) / (y1 - y0), half = h0 + (h1 - h0) * (t0 + t1) / 2;
+      let v0 = vAt(t0), v1 = vAt(t1);
+      if (flip) [v0, v1] = [1 - v1, 1 - v0];
+      c.drawImage(art.canvas, art.ox, art.oy + v0 * th, tw, Math.max(1, (v1 - v0) * th), cx - half, y, half * 2, 1);
+    }
+  };
+  // On the floor, depth goes as 1 / width: the far rows of the texture get squeezed (perspective-correct v).
+  const floorV = (t) => {
+    const half = T.topHalf + (T.bottomHalf - T.topHalf) * t;
+    return (1 / T.topHalf - 1 / half) / (1 / T.topHalf - 1 / T.bottomHalf);
+  };
+  const hatch = (c, inset = 0) => {
+    c.beginPath();
+    c.moveTo(cx - T.topHalf + inset, T.top + inset);
+    c.lineTo(cx + T.topHalf - inset, T.top + inset);
+    c.lineTo(cx + T.bottomHalf - inset, T.bottom - inset);
+    c.lineTo(cx - T.bottomHalf + inset, T.bottom - inset);
+    c.closePath();
+  };
+
+  // Shut: the texture on the floor, with a dark gap all around it.
+  const [shut, s] = canvas();
+  warp(s, T.top, T.bottom, T.topHalf, T.bottomHalf, floorV);
+  s.strokeStyle = 'rgb(14,10,7)';
+  s.lineWidth = 3;
+  hatch(s, 1);
+  s.stroke();
+  sprites.set('trapdoor', makeSprite(shut));
+
+  // Open: the lid swung up against the far edge (its underside, in shadow), then the black shaft in front of it.
+  const [open, o] = canvas();
+  const lidTop = 26, lidHalf = T.topHalf - 6;
+  warp(o, lidTop, T.top, lidHalf, T.topHalf, (t) => t, true);
+  o.fillStyle = 'rgba(0,0,0,0.5)';
+  o.beginPath();
+  o.moveTo(cx - T.topHalf, T.top);
+  o.lineTo(cx - lidHalf, lidTop);
+  o.lineTo(cx + lidHalf, lidTop);
+  o.lineTo(cx + T.topHalf, T.top);
+  o.closePath();
+  o.fill();
+  o.fillStyle = 'rgb(14,10,7)';
+  hatch(o);
+  o.fill();
+  const g = o.createLinearGradient(0, T.top, 0, T.bottom); // the far wall of the shaft is lit a little
+  g.addColorStop(0, 'rgb(34,27,21)');
+  g.addColorStop(0.35, 'rgb(6,5,4)');
+  g.addColorStop(1, 'rgb(2,2,2)');
+  o.fillStyle = g;
+  hatch(o, 5);
+  o.fill();
+  sprites.set('trapdoor_open', makeSprite(open));
+}
+
 // Loads everything referenced by the db. Fine while the game is tiny; switch to per-room loading later.
 export async function loadAssets(db, onProgress = () => {}) {
   const jobs = [];
@@ -182,5 +292,7 @@ export async function loadAssets(db, onProgress = () => {}) {
     }),
   );
   addWindowSprites(out.sprites);
+  addCordSprites(out.sprites);
+  addTrapSprites(out.sprites);
   return out;
 }

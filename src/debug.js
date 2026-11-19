@@ -77,6 +77,9 @@ export class Debug {
       if (it.to !== undefined) t += it.to < 0 ? ' -> EXIT' : ` -> room ${it.to}`;
       if (it.lock !== undefined) t += ` [lock ${it.lock}]`;
       if (it.levers) t += ` [levers ${it.levers.map((v) => (v ? 'v' : '^')).join('')}]`;
+      if (it.linked) t += ` (wired, start ${it.linked.map((v) => (v ? 'v' : '^')).join('')})`;
+      if (it.crooked) t += ` [crooked, start ${it.crooked.map((v) => '|RL'[v]).join('')}]`;
+      if (it.trap) t += ` [trapdoor${g.unlocked.has(`${g.roomIndex}:${s.items.indexOf(it)}`) ? ' open' : ''}]`;
       if (it.key !== undefined) t += ` {key ${it.key}}`;
       if (it.pill) t += ' {pill}';
       if (it.clue) t += ` {clue ${it.clue.map((v) => (v ? 'v' : '^')).join('')}}`;
@@ -88,6 +91,7 @@ export class Debug {
       `held [${g.keys.join(', ')}]  pills ${g.pills}  (level has ${w.rooms.reduce((n, r) => n + r.items.filter((it) => it.pill).length, 0)},` +
         ` in rooms ${w.rooms.flatMap((r, i) => (r.items.some((it) => it.pill) ? [i] : [])).join(', ') || '-'})`,
       `lever room ${w.rooms.findIndex((r) => r.kind === 'levers')} (-1 = none)  clue in room ${w.rooms.findIndex((r) => r.items.some((it) => it.clue))}  levers now ${(g.leverPos.get(g.roomIndex) ?? []).map((v) => (v ? 'v' : '^')).join('') || '-'}`,
+      `crooked room ${w.rooms.findIndex((r) => r.kind === 'crooked')} (-1 = none)  paintings now ${(g.hangPos.get(g.roomIndex) ?? []).map((v) => '|RL'[v]).join('') || '-'}  (| straight, R right, L left)`,
       `dark rooms ${w.rooms.flatMap((r, i) => (r.dark ? [i + (r.dark.screamer ? '!' : '')] : [])).join(', ') || '-'}  (! = screamer)`,
       `ambience ${w.ambience}  weather ${w.weather}  windows in rooms ${w.rooms.flatMap((r, i) => (r.windows ? [i + (r.windows.length > 1 ? 'x2' : '') + (g.shut.has(i) ? ' (shut)' : '')] : [])).join(', ') || '-'}`,
       `render ${this.fps} fps (on demand)`,

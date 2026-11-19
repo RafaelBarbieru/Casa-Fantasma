@@ -4,6 +4,7 @@
 // drawn into the HUD canvas, so it gets the same PS1 colour reduction as the game.
 import { KEY_ICON } from './hud.js';
 import { CONFIG } from './config.js';
+import { TRAP } from './assets.js';
 import { L } from './i18n.js';
 
 export const PANEL = { x: 300, y: 44, w: 152, h: 160 }; // HUD px
@@ -112,6 +113,21 @@ function lever(k, cx, cy, h, down, o = {}) {
   sprite(k, 'lever_handle', cx, cy + (down ? 1 : -1) * CONFIG.levers.travel * h, hh);
 }
 
+// A sagging cord from (x0, y0) to (x1, y1), its middle `sag` px below the straight line (like assets.js cords).
+function cord(c, x0, y0, x1, y1, sag, color, width) {
+  c.save();
+  c.strokeStyle = color;
+  c.lineWidth = width;
+  c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(x0, y0);
+  c.quadraticCurveTo((x0 + x1) / 2, (y0 + y1) / 2 + 2 * sag, x1, y1);
+  c.stroke();
+  c.restore();
+}
+
+const rgb = (a) => `rgb(${a.join(',')})`;
+
 // --- the pages ------------------------------------------------------------------------------------------------
 export const TUTORIAL = [
   {
@@ -216,6 +232,54 @@ export const TUTORIAL = [
       combo.forEach((down, i) => lever(k, lx(i), ly, 20, down, i === 4 ? { glow: WARM, blur: 7 } : {}));
       beam(k, lx(2), ly, 85, 0.12);
       pointer(c, lx(4) + 2, ly + 3);
+    },
+  },
+  {
+    id: 'wired',
+    draw(k) {
+      // The same room, but a cable sags between each pair of levers; they are mixed up, the pointer on the middle one.
+      const { c, P } = k, fy = room(k), ly = fy - 58, pos = [1, 0, 0, 1, 0], lx = (i) => P.x + 52 + i * 22;
+      const wy = ly + 10 - CONFIG.cords.leverDrop * 20; // CONFIG.cords: a little above the plate's bottom edge
+      sprite(k, 'door09', P.x + 21, fy - 36, 72);
+      for (let i = 0; i < 4; i++) cord(c, lx(i), wy, lx(i + 1), wy, 4, rgb(CONFIG.cords.wire.color), 2);
+      pos.forEach((down, i) => lever(k, lx(i), ly, 20, down, i === 2 ? { glow: WARM, blur: 7 } : {}));
+      beam(k, lx(2), ly, 85, 0.12);
+      pointer(c, lx(2) + 2, ly + 3);
+    },
+  },
+  {
+    id: 'crooked',
+    draw(k) {
+      // A door on the left, three paintings hanging from one nail each, leaning, tied by a cord between the nails.
+      const { c, P } = k, fy = room(k), ny = P.y + 34, h = 24;
+      const art = [['painting01', 0.2], ['painting05', 0], ['painting06', -0.2]], x = (i) => P.x + 64 + i * 34;
+      sprite(k, 'door04', P.x + 21, fy - 36, 72);
+      for (let i = 0; i < 2; i++) cord(c, x(i), ny, x(i + 1), ny, 3, rgb(CONFIG.cords.rope.color), 1.5);
+      art.forEach(([id, rot], i) => {
+        sprite(k, id, x(i), ny + 2 + h / 2, h, { rot, pivot: [x(i), ny], ...(i === 0 ? { glow: WARM, blur: 7 } : {}) });
+        c.fillStyle = '#1a1612';
+        c.fillRect(x(i) - 1, ny - 1, 2, 2); // the nail
+      });
+      beam(k, x(1), ny + 14, 90, 0.12);
+      pointer(c, x(0) + 2, ny + 14);
+    },
+  },
+  {
+    id: 'trapdoors',
+    draw(k) {
+      // No door: levers on the wall, and on the floor the open trapdoor (assets.js TRAP) with the gold key inside.
+      const { c, P } = k, fy = room(k), tx = P.x + 52, h = 54, sp = k.sprites.get('trapdoor_open');
+      const ly = fy - 62, lx = (i) => P.x + 86 + i * 18;
+      [1, 0, 1, 1].forEach((down, i) => lever(k, lx(i), ly, 17, down));
+      const holeY = fy + 18; // the hole's centre, below the floor line
+      if (sp) {
+        // The sprite is drawn by its tight box, so shift it until TRAP.holeY lands on holeY.
+        const [, by0, , by1] = sp.box, f = h / (by1 - by0);
+        sprite(k, 'trapdoor_open', tx, holeY - (TRAP.holeY - (by0 + by1) / 2) * f, h);
+        sprite(k, 'master_key', tx, holeY, 15, { glow: WARM, blur: 8 });
+      }
+      beam(k, tx + 10, fy, 90, 0.12);
+      pointer(c, tx + 3, holeY + 2);
     },
   },
   {

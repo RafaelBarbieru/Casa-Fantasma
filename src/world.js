@@ -4,9 +4,12 @@
 //   seed, level, ambience,
 //   weather: 'none' | 'windy' | 'storm',  heard through the windows (see 7. below)
 //   rooms: [{                         rooms[0] is the start. The rooms form a tree: every room but the
-//     kind: 'doors' | 'paintings' | 'ghost' | 'levers',  start has exactly one way in (its parent), which is where
-//                                     "back" goes. 'levers' = one door locked by a row of levers (see 6. below)
+//     kind: 'doors' | 'paintings' | 'ghost' | 'levers' | 'crooked',  start has exactly one way in (its parent),
+//                                     which is where "back" goes. 'levers' = one door locked by a row of levers,
+//                                     'crooked' = one door locked by a row of crooked paintings (see 6. below)
 //     ghost?: { id, x, y },           ghost rooms only: black room, always this ghost (data/ghosts.json id)
+//     trap?: true,                    lever/crooked rooms only: a trapdoor room (see 8. below): no door, its puzzle
+//                                     opens the trapdoor item instead
 //     dark?: { switchAt, screamer? }, dark room: no flashlight, nothing usable until its light switch is on.
 //                                     switchAt 0..1 picks the switch's spot among the free ones on the wall.
 //                                     screamer: the room is empty (items: []) and a screamer jumps out at the light
@@ -21,7 +24,15 @@
 //               lock?: keyIndex,      doors only: locked until key `lock` is used on it
 //               levers?: [0|1, ...],  doors only: opens only with the levers of its room in this combination
 //                                     (index = lever, 0 = up, 1 = down; all levers start up)
+//               linked?: [0|1, ...],  lever doors only: the levers are wired (pulling one flips its neighbours),
+//                                     start in these positions, and `levers` is all 1 (every lever down)
+//               crooked?: [0|1|2, ...], crooked room door: opens once every painting hangs straight. Start
+//                                     positions: 0 straight, 1 tilted right, 2 tilted left
 //               lever?: index,        lever rooms only: lever `index` of the row (left -> right)
+//               hang?: index,         crooked rooms only: painting `index` of the row (left -> right)
+//               trap?: true,          the trapdoor of a trapdoor room (item 'trapdoor', in the layout's door slot, on the
+//                                     floor). Carries the puzzle (levers/linked/crooked, like a puzzle door) and what
+//                                     lies inside (key/pill, or nothing)
 //               key?: keyIndex,       paintings only: a key is hidden behind it
 //               pill?: true,          paintings only: a pill is hidden behind it (never with a key)
 //               clue?: [0|1, ...] }], paintings only: the lever door's combination is painted on the wall behind
@@ -42,9 +53,16 @@
 //      random combination of its levers, with a small region behind it that may (levers.masterChance) hold the
 //      master key. The lever door never needs a key. Rolled on its own random stream (leverRng).
 //      Its combination (levers.clueChance) is painted on the wall behind one painting or poster outside the lever
-//      region, picked on another stream of its own (clue).
+//      region, picked on another stream of its own (clue). Some lever rooms are wired instead (levers.linked): no
+//      combination to find, the levers start scrambled and must all go down; they never get a clue.
+//      Also maybe (crooked.roomChance) a crooked painting room on another unused open-region door: the same idea with
+//      paintings that turn in 3 steps. Its own stream too (krng); it may hold the master key (crooked.masterChance).
 //   7. The weather (weather.chances), and windows in some painting and ghost rooms (windows.roomChance): never on a
 //      wall with a door. Both on a random stream of their own (wrng).
+//   8. Trapdoor rooms (traps.perLevel): some dead-end painting rooms hiding at most one thing become a puzzle room
+//      without a door (traps.puzzles: plain levers, wired levers or crooked paintings). Its puzzle opens a trapdoor in
+//      the floor, with whatever the room hid inside (or nothing). Their own stream (trng), after the pills and before
+//      the lever clue, so a plain lever trapdoor room gets the clue. At most one plain lever room per level.
 // So a level is always solvable. Each locked door gets a door art no other door in the level uses, so the key
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
@@ -55,8 +73,26 @@ export const EXIT = -1;
 
 const fits = (slot, tag) => (slot.accepts || []).includes(tag);
 
+// Start of a row puzzle: n pieces with `mod` positions each (levers: 2, crooked paintings: 3). A click on piece i
+// turns it and its neighbours one step forward. Returns start positions a random reachable scramble away from
+// `goal` (same for every piece), picked by u (one random draw, 0..1) among those needing at least minClicks clicks
+// (or the hardest ones if none does). Brute force: 3^4 or 2^5 click sets.
+function scramble(n, mod, goal, minClicks, u) {
+  const fewest = new Map(); // scramble -> { s, clicks }: the fewest clicks that make it
+  for (let c = 0; c < mod ** n; c++) {
+    const p = Array.from({ length: n }, (_, i) => Math.floor(c / mod ** i) % mod);
+    const s = p.map((_, i) => ((p[i - 1] ?? 0) + p[i] + (p[i + 1] ?? 0)) % mod);
+    const k = s.join(''), clicks = p.reduce((a, b) => a + b, 0);
+    if (!fewest.has(k) || clicks < fewest.get(k).clicks) fewest.set(k, { s, clicks });
+  }
+  const all = [...fewest.values()], most = Math.max(...all.map((x) => x.clicks));
+  const pool = all.filter((x) => x.clicks >= Math.min(minClicks, most));
+  // Clicking p from the start must land on the goal: start = goal - s.
+  return pool[Math.floor(u * pool.length)].s.map((v) => (((goal - v) % mod) + mod) % mod);
+}
+
 export function generateWorld(seed, db, {
-  ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, levers = {}, windows = {},
+  ambience = [], avoidAmbience = null, maze = {}, ghost = {}, pills = {}, dark = {}, levers = {}, crooked = {}, traps = {}, windows = {},
   weather = { none: 1 }, level = 1,
 } = {}) {
   const rng = createRng(seed);
@@ -71,6 +107,19 @@ export function generateWorld(seed, db, {
   const hasLevers = !!db.rooms.levers && Object.values(db.items).some((d) => (d.placement || []).includes('lever'))
     && leverRoll < perLevel(levers.roomChance);
   const leverVault = hasLevers && leverVaultRoll < (levers.masterChance ?? 0);
+  const linkedRoll = lrng.next(), linkedAt = lrng.next(); // after the old draws, so combinations never changed
+  const linked = hasLevers && linkedRoll < (atLevel(levers.linked?.chance, level) ?? 0);
+  // Crooked painting room: the same, on a stream of its own (always 3 draws).
+  const krng = createRng((seed ^ 0xc200ed) >>> 0);
+  const crookedRoll = krng.next(), crookedVaultRoll = krng.next(), crookedAt = krng.next();
+  const hangArt = Object.keys(db.items)
+    .filter((id) => (db.items[id].placement || []).includes('wall') && db.items[id].kind !== 'poster');
+  const hangSlots = (db.rooms.crooked?.slots ?? []).filter((s) => fits(s, 'hang'));
+  const nHang = Math.min(crooked.count ?? 4, hangSlots.length, hangArt.length);
+  const hasCrooked = nHang >= 2 && !!db.rooms.crooked?.slots.some((s) => fits(s, 'door'))
+    && crookedRoll < perLevel(crooked.roomChance);
+  const crookedVault = hasCrooked && !leverVault && crookedVaultRoll < (crooked.masterChance ?? 0);
+  const crookedStart = hasCrooked ? scramble(nHang, 3, 0, crooked.minTurns ?? 0, crookedAt) : null;
   const m = {
     startDoors: 3, doors: [2, 3], paintings: [1, 4], openRooms: [3, 6], sideRooms: [1, 3],
     sideLocks: [0, 1, 2, 3], masterBehindChance: 0.6, doorRoomChance: 0.45, ...maze,
@@ -78,9 +127,9 @@ export function generateWorld(seed, db, {
   const range = ([a, b]) => a + rng.int(b - a + 1);
   const sideLocks = perLevel(m.sideLocks);
   const masterRoll = sideLocks > 0 && rng.next() < m.masterBehindChance;
-  const masterBehind = masterRoll && !leverVault; // the lever region is the vault instead
+  const masterBehind = masterRoll && !leverVault && !crookedVault; // the lever/crooked region is the vault instead
   const nLocks = 1 + sideLocks;
-  const leverStage = sideLocks + 1;
+  const leverStage = sideLocks + 1, crookedStage = sideLocks + 2;
 
   // --- 1. graph
   const rooms = [];
@@ -96,6 +145,8 @@ export function generateWorld(seed, db, {
       }
     } else if (kind === 'levers') {
       r.doors.push({ to: null, lock: null, levers: combo }); // linked below, never left open
+    } else if (kind === 'crooked') {
+      r.doors.push({ to: null, lock: null, crooked: crookedStart });
     } else if (kind === 'paintings') {
       const n = range(m.paintings);
       for (let i = 0; i < n; i++) r.paintings.push({ key: null });
@@ -131,7 +182,8 @@ export function generateWorld(seed, db, {
   };
 
   addRoom('doors', -1, 0);
-  grow(0, range(levelRange(m.openRooms)), sideLocks + (masterBehind || leverVault ? 0 : 1), nLocks + (hasLevers ? 1 : 0));
+  grow(0, range(levelRange(m.openRooms)), sideLocks + (masterBehind || leverVault || crookedVault ? 0 : 1),
+    nLocks + (hasLevers ? 1 : 0) + (hasCrooked ? 1 : 0));
 
   const keys = [];
   const lock = (k) => {
@@ -159,6 +211,14 @@ export function generateWorld(seed, db, {
     link({ room: lr, door: 0 }, leverVault ? 'paintings' : randomKind(), leverStage);
     grow(leverStage, range(levelRange(m.sideRooms)) - 1, 0, 0);
   }
+  // Crooked painting room, the same way, leading to region `crookedStage`.
+  if (hasCrooked) {
+    const o = rng.pick(openIn(0));
+    take(o);
+    const cr = link(o, 'crooked', 0);
+    link({ room: cr, door: 0 }, crookedVault ? 'paintings' : randomKind(), crookedStage);
+    grow(crookedStage, range(levelRange(m.sideRooms)) - 1, 0, 0);
+  }
 
   // Hide keys: side keys in the open region, the master key in the open region or in the vault.
   const hide = (k, stage) => {
@@ -170,7 +230,7 @@ export function generateWorld(seed, db, {
     keys[k].at = at;
   };
   for (let k = 1; k <= sideLocks; k++) hide(k, 0);
-  hide(0, leverVault ? leverStage : masterBehind ? vault : 0);
+  hide(0, leverVault ? leverStage : crookedVault ? crookedStage : masterBehind ? vault : 0);
 
   // Leftover doors -> decoy painting rooms, or (from level 2) ghost-only rooms. They are dead ends, so they never
   // block the way. A level whose chance is > 0 gets at least one ghost room when it has a leftover door.
@@ -208,8 +268,8 @@ export function generateWorld(seed, db, {
     }
     const tag = r.kind === 'paintings' ? 'wall' : 'door';
     const need = r.kind === 'paintings' ? r.paintings.length : r.doors.length;
-    // Lever rooms always use the "levers" layout (its single door slot keeps it out of the other rooms).
-    const templates = r.kind === 'levers' ? ['levers']
+    // Lever and crooked rooms always use their own layout (its single door slot keeps it out of the other rooms).
+    const templates = r.kind === 'levers' || r.kind === 'crooked' ? [r.kind]
       : Object.keys(db.rooms).filter((id) => db.rooms[id].slots.filter((s) => fits(s, tag)).length >= need);
     if (!templates.length) throw new Error(`[world] no room template has ${need} "${tag}" slots`);
     const template = rng.pick(templates);
@@ -223,7 +283,15 @@ export function generateWorld(seed, db, {
       const d = r.doors[0], art = rng.pick(leverArt);
       const ls = db.rooms[template].slots.filter((s) => fits(s, 'lever')).slice(0, nLevers);
       items = [{ item: rng.pick(commonDoors), slot: slots[0].id, to: d.to, levers: d.levers.slice(0, ls.length) }];
+      if (linked) {
+        items[0].levers = ls.map(() => 1);
+        items[0].linked = scramble(ls.length, 2, 1, levers.linked?.minPulls ?? 0, linkedAt);
+      }
       ls.forEach((s, i) => items.push({ item: art, slot: s.id, lever: i }));
+    } else if (r.kind === 'crooked') {
+      const d = r.doors[0], art = rng.shuffle(hangArt);
+      items = [{ item: rng.pick(commonDoors), slot: slots[0].id, to: d.to, crooked: d.crooked.slice() }];
+      hangSlots.slice(0, nHang).forEach((s, i) => items.push({ item: art[i], slot: s.id, hang: i }));
     } else if (r.kind === 'doors') {
       const used = new Set(r.doors.filter((d) => d.lock !== null && reserved[d.lock]).map((d) => reserved[d.lock]));
       const art = (d) => {
@@ -263,10 +331,59 @@ export function generateWorld(seed, db, {
   const spots = out.flatMap((r) => (r.kind === 'paintings' ? r.items.filter((it) => it.key === undefined) : []));
   for (const it of prng.shuffle(spots).slice(0, nPills)) it.pill = true;
 
-  // Lever clue: its own stream too (always 2 draws), so it never shifts layouts, pills or dark rooms.
+  // Trapdoor rooms: their own stream, so they never shift layouts or pills. A converted room keeps its walls; its
+  // paintings are replaced by the puzzle, and its one hidden thing (if any) goes into the trapdoor.
+  const trng = createRng((seed ^ 0x7a9d00) >>> 0);
+  const expectedTraps = perLevel(traps.perLevel);
+  const nTraps = Math.floor(expectedTraps) + (trng.next() < expectedTraps % 1 ? 1 : 0);
+  if (nTraps > 0) {
+    const hiddenIn = (r) => r.items.filter((it) => it.key !== undefined || it.pill);
+    const cands = trng.shuffle(out.map((_, i) => i).filter((i) => i > 0 && out[i].kind === 'paintings' && hiddenIn(out[i]).length <= 1));
+    const leverSlots = (db.rooms.levers?.slots ?? []).filter((s) => fits(s, 'lever')).slice(0, nLevers);
+    const doorSlot = (t) => db.rooms[t]?.slots.find((s) => fits(s, 'door'));
+    const can = {
+      crooked: nHang >= 2 && !!doorSlot('crooked'),
+      levers: leverSlots.length > 0 && leverArt.length > 0 && !!doorSlot('levers'),
+    };
+    let plainUsed = out.some((r) => r.items.some((it) => it.levers && !it.linked));
+    const weights = atLevel(traps.puzzles, level) ?? {};
+    for (const i of cands.slice(0, nTraps)) {
+      const r = out[i], hidden = hiddenIn(r)[0];
+      const pickRoll = trng.next(), u = trng.next();
+      const odds = Object.entries(weights).filter(([k, w]) => w > 0 && can[k === 'crooked' ? 'crooked' : 'levers']
+        && !(k === 'levers' && plainUsed));
+      if (!odds.length) continue;
+      let roll = pickRoll * odds.reduce((n, [, w]) => n + w, 0), kind = odds[0][0];
+      for (const [k, w] of odds) if ((roll -= w) < 0) { kind = k; break; }
+      const template = kind === 'crooked' ? 'crooked' : 'levers';
+      const trap = { item: 'trapdoor', slot: doorSlot(template).id, trap: true };
+      if (hidden?.key !== undefined) trap.key = hidden.key;
+      else if (hidden?.pill) trap.pill = true;
+      let items;
+      if (kind === 'crooked') {
+        trap.crooked = scramble(nHang, 3, 0, crooked.minTurns ?? 0, u);
+        const art = trng.shuffle(hangArt);
+        items = [trap, ...hangSlots.slice(0, nHang).map((sl, k) => ({ item: art[k], slot: sl.id, hang: k }))];
+      } else {
+        const bits = leverSlots.map(() => (trng.next() < 0.5 ? 1 : 0)), art = trng.pick(leverArt);
+        if (kind === 'wired') {
+          trap.levers = leverSlots.map(() => 1);
+          trap.linked = scramble(leverSlots.length, 2, 1, levers.linked?.minPulls ?? 0, u);
+        } else {
+          trap.levers = bits;
+          plainUsed = true;
+        }
+        items = [trap, ...leverSlots.map((sl, k) => ({ item: art, slot: sl.id, lever: k }))];
+      }
+      Object.assign(r, { kind: template, template, items, trap: true });
+    }
+  }
+
+  // Lever clue: its own stream too (always 2 draws), so it never shifts layouts, pills or dark rooms. It goes with
+  // the level's one plain lever room (door or trapdoor); wired ones need none.
   const crng = createRng((seed ^ 0xc10e5) >>> 0);
   const clueRoll = crng.next(), clueAt = crng.next();
-  const leverDoor = out.find((r) => r.kind === 'levers')?.items.find((it) => it.levers);
+  const leverDoor = out.flatMap((r) => r.items).find((it) => it.levers && !it.linked);
   if (leverDoor && clueRoll < (levers.clueChance ?? 1)) {
     const spots = out.flatMap((r) => (r.kind === 'paintings' && r.stage !== leverStage
       ? r.items.filter((it) => it.key === undefined && !it.pill) : []));
@@ -299,9 +416,12 @@ export function generateWorld(seed, db, {
   out.forEach((r) => {
     const has = wrng.next() < (windows.roomChance ?? 0), two = wrng.next() < (windows.twoChance ?? 0);
     const a = wrng.next(), b = wrng.next();
-    if (!has || (r.kind !== 'paintings' && r.kind !== 'ghost')) return;
+    if (!has || (r.kind !== 'paintings' && r.kind !== 'ghost' && !r.trap)) return;
     const used = new Set(r.items.map((it) => it.slot));
-    const free = (r.kind === 'ghost' ? ghostSlots : wallSlots(r.template)).filter((s) => !used.has(s.id));
+    // A trapdoor room has no door, so one window fits on the wall above its trapdoor.
+    const trapAt = r.trap && r.items.find((it) => it.trap);
+    const free = trapAt ? [{ x: db.rooms[r.template].slots.find((s) => s.id === trapAt.slot).x, y: traps.windowY ?? 420 }]
+      : (r.kind === 'ghost' ? ghostSlots : wallSlots(r.template)).filter((s) => !used.has(s.id));
     if (!free.length) return;
     const first = free[Math.floor(a * free.length)], rest = free.filter((s) => s !== first);
     const picks = two && rest.length ? [first, rest[Math.floor(b * rest.length)]] : [first];

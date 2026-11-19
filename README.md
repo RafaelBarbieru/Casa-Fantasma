@@ -30,7 +30,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 The "Click to enter" screen also shows a warning about loud noises and flickering lights, and points to the Epilepsy mode option.
 
 After "Click to enter", the main menu appears over the dimmed first room (the ambience is already playing, and the flashlight follows the pointer behind the menu).
-- **START** begins level 1. **HOW TO PLAY** is a short tutorial (8 pages: the goal, controls, paintings, posters, dark rooms, levers, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a door with a row of levers, a ghost, the heart and pills). The text is in `src/locales/` (`tutorial`) and the pictures in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `door09`, `lever_base`, `lever_handle`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
+- **START** begins level 1. **HOW TO PLAY** is a short tutorial (11 pages: the goal, controls, paintings, posters, dark rooms, levers, wired levers, crooked paintings, trapdoors, ghosts, health). Each page has a small picture made from the game's own art (a door with its key, glowing doors, a slipped painting, a torn poster, a switch glowing in the dark, a door with a row of levers, the same levers tied by a cable, crooked paintings tied by a cord, an open trapdoor with the gold key inside, a ghost, the heart and pills). The text is in `src/locales/` (`tutorial`) and the pictures in `src/tutorial.js`; they use the art by name (`door07`, `painting02`, `poster01`, `door09`, `door04`, `painting01`, `painting05`, `painting06`, `lever_base`, `lever_handle`, `ghost01`, ...), so renaming or removing one of those leaves a gap in its picture. **OPTIONS** opens the settings:
   - **Audio:** volume sliders for **Master** (everything), **Ambience** (the level loop and the random ambience sounds) and **SFX** (every other sound, including the menu's). Click or drag along a slider; it moves in 5% steps.
   - **Game → Epilepsy mode:** no flickering or flashing light. The flashlight and the ceiling lights fade instead of flickering, ghosts don't shimmer, screamers appear as a still image (no flashing or shaking), and the red screen edge and the heart don't throb with the heartbeat (the heart still jumps).
   - **Game → Language:** English or Español. The first time, the game picks the browser's language (Spanish browsers get Spanish, anything else English).
@@ -124,6 +124,50 @@ To change one level, change its value in the list. Lists shorter than 10 repeat 
 - `travel`: how far up and down the handle sits from the middle of the plate. `bulge`: how much bigger the handle looks halfway (as it turns towards you).
 - The levers' size is `scale` of `lever_base` and `lever_handle` in `data/items.json` (keep them equal); their positions are the `lever-1`...`lever-5` spots of the `levers` layout.
 - Levels 1 and 2 keep exactly the same layouts as before for a given seed.
+
+### Wired levers
+- From level 4, a lever room is sometimes **wired** instead: a dark cable sags between each pair of levers. There is no secret combination and **no clue** anywhere in the level; the puzzle is solved in the room itself, so the danger is the time you spend there (random ghosts, gusts and thunder keep coming).
+- Pulling a lever also flips the levers right next to it. The levers start mixed up (never already solved), and the door opens **by itself** (`sfx/lever_success`) as soon as every lever is down. There is no penalty for wrong pulls.
+- So players don't mistake it for a lever room whose clue they haven't found, the cable shows it, and the room says so when you walk in ("The levers are wired to each other..."). Clicking the shut door says every lever has to be down. The tutorial has a page for it.
+- The cable is drawn by the game (no art file).
+
+`src/config.js` → `levers.linked`:
+- `chance`: per level, how likely a level's lever room is wired (0 on levels 1-3).
+- `minPulls`: the starting mix needs at least this many pulls to solve (with 5 levers, 4 is the most possible).
+
+`src/config.js` → `cords.wire`: the cable's colour, highlight colour, thickness and sag. `cords.leverDrop`: how high on the lever plate it is fixed.
+
+### Crooked paintings
+- From level 2, a level sometimes has a **crooked painting room**: one shut door and a row of 4 paintings (never posters), each hanging from a single nail, tied to the next one by a cord between the nails. They start crooked.
+- Clicking a painting turns it one step: straight -> leaning right -> leaning left -> straight again. The paintings tied to it (left and right) turn one step too (`sfx/painting...`). Once every painting hangs straight, the door opens by itself (`sfx/lever_success`) and the paintings stay put. They can't be searched: nothing is behind them.
+- Like a wired lever room, the cord and a message on entering say it is a puzzle room; clicking the shut door says the paintings are still crooked. The tutorial has a page for it.
+- Behind its door there are a few more rooms: sometimes the **gold key** (never when it is already behind the lever door), otherwise nothing important. A crooked room can be dark like any other room.
+- The debug panel shows the starting positions next to the door (`|` straight, `R` right, `L` left), the room number and the current positions.
+
+`src/config.js` → `crooked`:
+- `roomChance`: per level, how likely the level has one (0 on level 1).
+- `masterChance`: how likely the gold key is behind its door.
+- `count`: how many paintings (at most the `hang` spots in the `crooked` layout).
+- `minTurns`: the starting mix needs at least this many clicks to solve.
+- `tiltDeg`: how far a crooked painting leans. `turnS`: how long a turn takes.
+- `fit`: paintings are shrunk to fit this box (pixels) so leaning neighbours never overlap. Their positions are the `hang-1`...`hang-4` spots of the `crooked` layout.
+- `cords.rope`: the cord's colour, highlight, thickness and sag.
+- Levels without a crooked room or wired levers keep exactly the same layouts as before for a given seed.
+
+### Trapdoor rooms
+- From level 2, some dead-end painting rooms are turned into a **puzzle room with no door**: a row of levers (plain or wired) or a row of crooked paintings, and a **trapdoor** in the floor. Solving the puzzle bangs the trapdoor open (the door sound).
+- Inside is whatever that room used to hide behind a painting: a **key**, the **gold key**, **pills**, or **nothing at all** (most of the time). Click it to take it. Rooms that hid two things are never used, so nothing is lost.
+- Wired levers and crooked paintings open it by themselves. Plain levers work like a lever door: set them, then click the trapdoor to try. Their arrows are painted behind a painting or poster somewhere in the level, as usual. A level never has more than one plain lever room (door or trapdoor), so the arrows can only mean one thing.
+- The room says what it is when you walk in ("A trapdoor in the floor..."). Clicking the shut trapdoor says what opens it.
+- It can have a window above the trapdoor, and it can be dark like any other room.
+- The trapdoor art is `art-src/trapdoor.png`: a flat, top-down texture of the hatch. The game lays it on the floor in perspective (narrower at the far edge) and, once open, stands it up behind the hole as the lid, in shadow. Its size is `scale` of `trapdoor` in `data/items.json` (1 = about 268 px wide at the front edge). It sits in the `door` spot of the `levers` or `crooked` layout, on the floor.
+- The tutorial has a page for it. The debug panel marks it `[trapdoor]` (or `[trapdoor open]`) with what is inside.
+
+`src/config.js` → `traps`:
+- `perLevel`: how many trapdoor rooms a level has on average (0.4 = a 40% chance of one, 1.2 = one and a 20% chance of a second). 0 on level 1.
+- `puzzles`: per level, which puzzles a trapdoor room may get and how likely each is (`crooked`, `levers` = plain, `wired`). The last entry repeats.
+- `drop`: how far below the floor line its hole sits. `windowY`: the height of a window above it.
+- Levels with no trapdoor room, crooked room or wired levers keep exactly the same layouts as before for a given seed.
 
 ### Windows and weather
 - Some rooms have one or two **windows** (`art-src/window.png`) on any level. Windows only go where there is no door: in painting rooms (in a free painting spot) and in ghost rooms. Through the glass you see the night sky, and an open window lets a little cold moonlight into the room.
@@ -275,6 +319,7 @@ To add a texture:
 - `scale` (optional) shrinks or enlarges items in that spot.
 - `accepts` lists the kinds of items that can go there.
 - The `levers` layout is only used for lever rooms: one `door` spot and the `lever` spots, left to right.
+- The `crooked` layout is only used for crooked painting rooms: one `door` spot and the `hang` spots, left to right.
 
 ### Items
 - Doors are items with `"placement": ["door"]` and go in `door` slots. Paintings use `"wall"`.

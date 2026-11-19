@@ -297,6 +297,49 @@ export const CONFIG = {
       fit: [0.75, 0.4], // ...but at most this share of the hiding painting's width and height
       paint: [150, 24, 18], // paint colour (RGB 0-255)
     },
+    // Wired levers: instead of a secret combination, a lever room may have its levers wired to each other (a cable
+    // hangs between neighbouring levers). Pulling one also flips the ones next to it. They start scrambled; the door
+    // opens by itself once every lever is down. No clue anywhere, no wrong-try penalty: the danger is the time spent.
+    linked: {
+      chance: [0, 0, 0, 0.35, 0.4, 0.45, 0.5, 0.5, 0.5, 0.5], // chance a level's lever room is a wired one
+      minPulls: 3,      // the scramble needs at least this many pulls to solve (5 levers: 4 at most)
+    },
+  },
+
+  // Crooked painting rooms (src/world.js + src/game.js, layout "crooked" in data/rooms.json). One shut door and a row
+  // of paintings hanging crooked from one nail each, tied to their neighbours by a cord. Clicking a painting turns it
+  // one step (straight -> tilted right -> tilted left -> straight) and turns the paintings tied to it too. The door
+  // opens by itself once every painting hangs straight. Like the lever room, a few rooms wait behind its door.
+  // Per-level lists: index 0 = level 1, the last value repeats.
+  crooked: {
+    roomChance: [0, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65], // chance a level has a crooked painting room
+    masterChance: 0.4,  // chance the master (gold) key is behind its door (never when it is behind the lever door)
+    count: 4,           // paintings in the room (at most the "hang" spots of the layout; posters are never used)
+    minTurns: 4,        // the scramble needs at least this many clicks to solve
+    tiltDeg: 11,        // how far a crooked painting leans, each way
+    turnS: 0.55,        // how long a painting takes to swing to its next position
+    fit: [210, 230],    // paintings are shrunk to fit this box (scene px), so tilted neighbours never overlap
+  },
+
+  // Trapdoor puzzle rooms (src/world.js + src/game.js). Some dead-end painting rooms are turned into a puzzle room with
+  // no door: a lever room (plain, with its clue somewhere, or wired) or a crooked painting room, whose puzzle opens a
+  // trapdoor in the floor instead. Whatever the room hid behind a painting (a key, the gold key or pills) is inside,
+  // or nothing. Rooms hiding two things are never used. Art: data/items.json "trapdoor" (a flat top-down texture, laid
+  // on the floor in perspective by src/assets.js addTrapSprites; its scale 1 = 268 px wide at the front edge).
+  traps: {
+    perLevel: [0, 0.4, 0.7, 1, 1, 1.2, 1.4, 1.6, 1.8, 2], // expected trapdoor rooms per level (whole part + a chance)
+    // Which puzzle a trapdoor room gets (relative weights, per level; the last one repeats). At most one PLAIN lever
+    // room per level (door or trapdoor), so its painted clue can only mean one thing.
+    puzzles: [{ crooked: 1 }, { crooked: 1 }, { crooked: 1, levers: 1 }, { crooked: 1, levers: 1, wired: 1 }],
+    drop: 100,          // its hole's centre sits this many px below the floor line
+    windowY: 420,       // a window in a trapdoor room goes above the trapdoor, centred at this height
+  },
+
+  // The cords tying wired levers and crooked paintings together (drawn by the game, src/assets.js addCordSprites).
+  cords: {
+    wire: { color: [28, 26, 24], shine: [120, 84, 52], width: 5, sag: 34 },  // between levers: dark cable
+    rope: { color: [70, 52, 34], shine: [140, 112, 76], width: 4, sag: 26 }, // between paintings: picture cord
+    leverDrop: 0.12,    // the wire is fixed this share of the lever plate's height above its bottom edge
   },
 
   // Windows (src/world.js + src/game.js, art: data/items.json "window" + "window_door"). Only on walls without doors:
