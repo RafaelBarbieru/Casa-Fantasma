@@ -321,9 +321,9 @@ export const CONFIG = {
     // Relative odds of each weather, per level: later levels are stormier.
     chances: [
       { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 },
-      { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1 }, { none: 1, windy: 1, storm: 1.5 },
-      { none: 0.8, windy: 1, storm: 1.5 }, { none: 0.6, windy: 1, storm: 2 }, { none: 0.4, windy: 1, storm: 2 },
-      { none: 0.3, windy: 1, storm: 2.5 },
+      { none: 1, windy: 1.5, storm: 1.5 }, { none: 1, windy: 1.5, storm: 1.5 }, { none: 0.8, windy: 2, storm: 2 },
+      { none: 0.8, windy: 2, storm: 2.5 }, { none: 0.6, windy: 2.5, storm: 2.5 }, { none: 0.4, windy: 2.5, storm: 3 },
+      { none: 0.3, windy: 2.5, storm: 3 },
     ],
     loops: { windy: 'ambience/wind_loop', storm: 'ambience/rain_loop' }, // exact sound names (path in audio-src/)
     loopVolume: 0.8,
