@@ -59,14 +59,15 @@ src/input.js        Pointer Events -> move/down/up/tap/leave in scene coords. To
 src/world.js        generateWorld(seed, db, {ambience, maze}): pure, seeded lock-and-key maze (format documented at the top). Reusable by a future editor
 src/rng.js          mulberry32
 src/assets.js       loadDB (data/*.json), loadImage, makeSprite (POT pad + alpha hit mask)
-src/debug.js        overlay (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot, F = false alarm, Q = silence
+src/dev.js          `DEV` flag (true in the repo; build.mjs writes `false` into dist and drops debug.js). Gates debug.js (dynamic import in main), ?debug/window.casa, ?seed/?level. Any new debug tool or cheat must check it
+src/debug.js        overlay (dev only) (` key or ?debug): seed, room contents (targets/locks/keys), key locations, fps, slot markers; N = new world, K = all keys, B = start room, A = ambience one-shot, F = false alarm, Q = silence
 data/items.json     { id: { src, scale, depth, placement:[tags], kind? } }   window + window_door: placement [] (game.js places them)   tags: "door" | "wall" (paintings + posters) | "lever" (lever base); kind "poster" = tears
 data/rooms.json     layouts { id: { slots:[{ id, x, y?, anchor?:'floor', scale?, accepts:[tags] }] } }   (x, y = item center, scene px). "doors" + "gallery" + "levers" (1 door + "lever" slots; lever rooms only)
 data/ghosts.json    { ghosts: { id: { src, scale } }, screamers: { id: { src } } }   ghosts load as sprites (same Map as items)
 data/surfaces.json  { walls: { id: { src, tile } }, floors: { id: { src, tile } } }   tile = scene px per repeat (floor: at the floor line)
 tools/serve.mjs     static dev server (--lan, --port=, --dir=). Without --dir, fs.watch re-runs audio.mjs/images.mjs on source changes (debounced)
 tools/images.mjs    art-src/** -> assets/**/*.webp via ffmpeg libwebp (incremental, orphan cleanup, never touches assets/audio/). `LOSSLESS` names (ghost*) skip lossy: near-black detail dies otherwise
-tools/build.mjs     validate paths -> dist/web -> dist/casa-fantasma-web.zip (hand-written zip writer, deflate)
+tools/build.mjs     validate paths -> dist/web (minus debug.js, dev.js -> DEV = false) -> dist/casa-fantasma-web.zip (hand-written zip writer, deflate)
 ```
 
 ## Rendering model

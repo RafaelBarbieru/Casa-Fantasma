@@ -56,6 +56,12 @@ function copy(rel) {
   files.push(rel);
 }
 INCLUDE.forEach(copy);
+// Release: no debug tools or cheats. dev.js -> DEV = false (main.js then never imports debug.js), and debug.js stays out.
+for (const rel of ['src/debug.js']) {
+  fs.rmSync(path.join(OUT, rel));
+  files.splice(files.indexOf(rel), 1);
+}
+fs.writeFileSync(path.join(OUT, 'src/dev.js'), 'export const DEV = false;\n');
 if (skipped.length) console.warn(`skipped non-web files:\n  ${skipped.join('\n  ')}`);
 
 // --- 3. zip

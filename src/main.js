@@ -4,7 +4,7 @@ import { loadDB, loadAssets, addClueSprites } from './assets.js';
 import { generateWorld, seedFromUrl, levelFromUrl } from './world.js';
 import { attachInput } from './input.js';
 import { Game } from './game.js';
-import { Debug } from './debug.js';
+import { DEV } from './dev.js';
 import { Hud } from './hud.js';
 import { loadSfx, unlockAudio, audioUnlocked, loadAudioIndex, setVolumes } from './audio.js';
 import { initSfx, playRole } from './sfx.js';
@@ -72,14 +72,15 @@ async function boot() {
     // The long dark between rooms sometimes brings one of the random ambience sounds.
     if (role === 'doorWait' && Math.random() < CONFIG.transition.waitAmbience) playRandomAmbience();
   };
-  const debug = new Debug({
+  // Debug overlay + cheat keys: dev only (the release build has no debug.js).
+  const debug = DEV ? new (await import('./debug.js')).Debug({
     game, renderer, playRandomAmbience, startSilence,
     regenerate: () => startLevel((Math.random() * 2 ** 32) >>> 0, game.world.level),
     nextLevel: () => game.onWorldEnd(),
-  });
+  }) : null;
   // Outside sounds (weather loop, thunder, wind) are clear only in a room with an open window.
   game.onRoomChange = () => {
-    debug.refresh();
+    debug?.refresh();
     setOutside(game.outsideOpen());
   };
 
@@ -147,7 +148,7 @@ async function boot() {
   const aim = (p, k) => { if (!started) { game.light.tx = p.x; game.light.ty = p.y; } menuPointer = { p, k }; };
   const pb = CONFIG.hud.pause;
   const onPause = (p) => Math.abs(p.x - pb.x) <= pb.w / 2 && Math.abs(p.y - pb.y) <= pb.h / 2;
-  if (new URLSearchParams(location.search).has('debug')) window.casa = { game, renderer, assets, db }; // console access
+  if (DEV && new URLSearchParams(location.search).has('debug')) window.casa = { game, renderer, assets, db }; // console access
   const world = newWorld(seedFromUrl(), levelFromUrl());
   addClueSprites(world, assets.sprites);
   game.setWorld(world);
@@ -170,8 +171,8 @@ async function boot() {
       renderer.draw(game.frame(), hud);
     }
     dirty = false;
-    debug.tick(dt, draw);
-    if (busy || debug.on) raf = requestAnimationFrame(loop);
+    debug?.tick(dt, draw);
+    if (busy || debug?.on) raf = requestAnimationFrame(loop);
     else {
       last = 0;
       // The loop sleeps when nothing moves; a random ghost or a false alarm must still come on time.
@@ -190,7 +191,7 @@ async function boot() {
 
   const onResize = () => {
     renderer.resize(canvas.clientWidth, canvas.clientHeight);
-    debug.refresh();
+    debug?.refresh();
     wake();
   };
   addEventListener('resize', onResize);

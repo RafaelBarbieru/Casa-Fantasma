@@ -24,6 +24,7 @@ Double-clicking `index.html` will **not** work. Browsers block it, so always use
 - `?lang=es` (or `?lang=en`): plays in that language.
 - `?seed=42`: always generates the same world. Use this when you want to reproduce something.
 - They can be combined: `http://localhost:5173/?debug&seed=42`
+- These are for testing only. The built version (`npm run build`) has no debug panel, no cheat keys, and ignores `?debug`, `?seed` and `?level`. Only `?lang` still works there.
 
 ## Main menu and options
 The "Click to enter" screen also shows a warning about loud noises and flickering lights, and points to the Epilepsy mode option.

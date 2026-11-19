@@ -49,6 +49,7 @@
 // (whose HUD icon shows that art) clearly names its door.
 import { createRng, randomSeed } from './rng.js';
 import { CONFIG, atLevel } from './config.js';
+import { DEV } from './dev.js';
 
 export const EXIT = -1;
 
@@ -312,13 +313,15 @@ export function generateWorld(seed, db, {
   return { seed: seed >>> 0, level, ambience: loops.length ? rng.pick(loops) : null, weather: sky, rooms: out, keys };
 }
 
-// ?level=N starts at level N (for testing).
+// ?level=N starts at level N, ?seed=N picks the maze (dev only: ignored in the release build).
 export function levelFromUrl() {
+  if (!DEV) return 1;
   const s = new URLSearchParams(location.search).get('level');
   return s !== null && /^\d+$/.test(s) && Number(s) > 0 ? Math.min(Number(s), CONFIG.levels) : 1;
 }
 
 export function seedFromUrl() {
+  if (!DEV) return randomSeed();
   const s = new URLSearchParams(location.search).get('seed');
   if (s !== null && /^\d+$/.test(s)) return Number(s) >>> 0;
   return randomSeed();
